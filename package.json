@@ -1,0 +1,24 @@
+{
+  "author": "hector",
+  "bugs": {
+    "url": "https://github.com/hsanjuan/go-libp2p-rpc"
+  },
+  "gx": {
+    "dvcsimport": "github.com/hsanjuan/go-libp2p-rpc"
+  },
+  "gxDependencies": [
+    {
+      "author": "whyrusleeping",
+      "hash": "QmbzCT1CwxVZ2ednptC9RavuJe7Bv8DDi2Ne89qUrA37XM",
+      "name": "go-libp2p",
+      "version": "4.3.0"
+    }
+  ],
+  "gxVersion": "0.10.0",
+  "language": "go",
+  "license": "",
+  "name": "go-libp2p-rpc",
+  "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
+  "version": "0.0.0"
+}
+
