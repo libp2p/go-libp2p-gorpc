@@ -5,7 +5,7 @@ import (
 
 	"github.com/ugorji/go/codec"
 
-	inet "gx/ipfs/QmQx1dHDDYENugYgqA22BaBrRfuv1coSsuPiM7rYh1wwGH/go-libp2p-net"
+	inet "github.com/libp2p/go-libp2p-net"
 )
 
 // streamWrap wraps a libp2p stream. We encode/decode whenever we
