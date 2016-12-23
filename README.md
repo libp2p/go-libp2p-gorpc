@@ -5,7 +5,7 @@
 [![](https://img.shields.io/badge/freenode-%23ipfs-blue.svg?style=flat-square)](http://webchat.freenode.net/?channels=%23ipfs)
 [![standard-readme compliant](https://img.shields.io/badge/standard--readme-OK-green.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 [![GoDoc](https://godoc.org/github.com/hsanjuan/go-libp2p-rpc)](https://godoc.org/github.com/hsanjuan/go-libp2p-rpc)
-[![Build Status](https://travis-ci.org/hsanjuan/go-libp2p-rpc/ipfs-cluster.svg?branch=master)](https://travis-ci.org/hsanjuan/go-libp2p-rpc)
+[![Build Status](https://travis-ci.org/hsanjuan/go-libp2p-rpc/go-libp2p-rpc.svg?branch=master)](https://travis-ci.org/hsanjuan/go-libp2p-rpc)
 [![Coverage Status](https://coveralls.io/repos/github/hsanjuan/go-libp2p-rpc/badge.svg?branch=master)](https://coveralls.io/github/hsanjuan/go-libp2p-rpc?branch=master)
 
 > Simple RPC for LibP2P.
