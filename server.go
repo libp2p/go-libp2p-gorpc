@@ -22,12 +22,17 @@ In effect, the method must look schematically like
 
 where T1 and T2 can be marshaled by encoding/gob.
 
-The method's first argument
-represents the arguments provided by the caller; the second argument
-represents the result parameters to be returned to the caller.  The method's
-return value, if non-nil, is passed back as a string that the client sees as
-if created by errors.New.  If an error is returned, the reply parameter will
-not be sent back to the client.
+The method's first argument represents the arguments provided by the caller;
+the second argument represents the result parameters to be returned to the
+caller.  The method's return value, if non-nil, is passed back as a string
+that the client sees as if created by errors.New.  If an error is returned,
+the reply parameter will not be sent back to the client.
+
+In order to use this package, a ready-to-go LibP2P Host must be provided
+to clients and servers, along with a protocol.ID. rpc will add a stream
+handler for the given protocol. Hosts must be ready to speak to clients,
+that is, peers must be part of the peerstore along with keys if secio
+communication is required.
 */
 package rpc
 
@@ -39,10 +44,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	logging "github.com/ipfs/go-log"
-	host "github.com/libp2p/go-libp2p-host"
-	inet "github.com/libp2p/go-libp2p-net"
-	protocol "github.com/libp2p/go-libp2p-protocol"
+	host "gx/ipfs/QmPTGbC34bPKaUm9wTxBo7zSCac7pDuG42ZmnXC718CKZZ/go-libp2p-host"
+	inet "gx/ipfs/QmQx1dHDDYENugYgqA22BaBrRfuv1coSsuPiM7rYh1wwGH/go-libp2p-net"
+	logging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
+	protocol "gx/ipfs/QmZNkThpqfVXs9GNbexPrfBbXSLNYeKrE7jwFM2oqHbyqN/go-libp2p-protocol"
 )
 
 var logger = logging.Logger("libp2p-rpc")
@@ -57,6 +62,8 @@ type methodType struct {
 	ReplyType reflect.Type
 }
 
+// service stores information about a service (which is a pointer to a
+// Go struct normally)
 type service struct {
 	name   string                 // name of service
 	rcvr   reflect.Value          // receiver of methods for the service
@@ -64,16 +71,27 @@ type service struct {
 	method map[string]*methodType // registered methods
 }
 
+// ServiceID is a header sent when performing an RPC request
+// which identifies the service and method being called.
 type ServiceID struct {
 	Name   string
 	Method string
 }
 
+// Response is a header sent when responding to an RPC
+// request which includes any error that may have happened.
 type Response struct {
 	Service ServiceID
 	Error   string // error, if any.
 }
 
+// Server is an LibP2P RPC server. It can register services which comply to the
+// limitations outlined in the package description and it will call the relevant
+// methods when receiving requests from a Client.
+//
+// A server needs a LibP2P host and a protocol, which must match the one used
+// by the client. The LibP2P host must be already correctly configured to
+// be able to handle connections from clients.
 type Server struct {
 	host     host.Host
 	protocol protocol.ID
@@ -82,6 +100,8 @@ type Server struct {
 	serviceMap map[string]*service
 }
 
+// NewServer creates a Server object with the given LibP2P host
+// and protocol.
 func NewServer(h host.Host, p protocol.ID) *Server {
 	s := &Server{
 		host:     h,
@@ -137,10 +157,11 @@ func (server *Server) handle(s *streamWrap) error {
 	replyv = reflect.New(mtype.ReplyType.Elem())
 
 	// Call service and respond
-	return service.call(s, mtype, svcID, argv, replyv)
+	return service.svcCall(s, mtype, svcID, argv, replyv)
 }
 
-func (s *service) call(sWrap *streamWrap, mtype *methodType, svcID ServiceID, argv, replyv reflect.Value) error {
+// svcCall calls the actual method associated
+func (s *service) svcCall(sWrap *streamWrap, mtype *methodType, svcID ServiceID, argv, replyv reflect.Value) error {
 	function := mtype.method.Func
 	// Invoke the method, providing a new value for the reply.
 	returnValues := function.Call([]reflect.Value{s.rcvr, argv, replyv})
@@ -153,22 +174,6 @@ func (s *service) call(sWrap *streamWrap, mtype *methodType, svcID ServiceID, ar
 	resp := &Response{svcID, errmsg}
 
 	return sendResponse(sWrap, resp, replyv.Interface())
-}
-
-func (s *service) localCall(call *Call, mtype *methodType, argv, replyv reflect.Value) {
-	// Call service and respond
-	function := mtype.method.Func
-	// Invoke the method, providing a new value for the reply.
-	returnValues := function.Call([]reflect.Value{s.rcvr, argv, replyv})
-	// The return value for the method is an error.
-	errInter := returnValues[0].Interface()
-	if errInter != nil {
-		call.Error = errInter.(error)
-		call.done()
-		return
-	}
-	creplyv := reflect.ValueOf(call.Reply)
-	creplyv.Elem().Set(replyv.Elem())
 }
 
 func sendResponse(s *streamWrap, resp *Response, body interface{}) error {
@@ -187,14 +192,15 @@ func sendResponse(s *streamWrap, resp *Response, body interface{}) error {
 	return nil
 }
 
-// Call allows a server to process a Call directly. Useful when a libp2p
-// node tries to do an RPC to itself.
-func (server *Server) Call(call *Call) {
+// Call allows a server to process a Call directly and act like a client
+// to itself. This is mostly useful because LibP2P does not allow to
+// create streams between a server and a client which share the same
+// host. See NewClientWithServer() for more info.
+func (server *Server) Call(call *Call) error {
 	var argv, replyv reflect.Value
 	service, mtype, err := server.getService(call.SvcID)
 	if err != nil {
-		call.Error = err
-		call.done()
+		return err
 	}
 
 	// Decode the argument value.
@@ -212,7 +218,21 @@ func (server *Server) Call(call *Call) {
 
 	replyv = reflect.New(mtype.ReplyType.Elem())
 
-	service.localCall(call, mtype, argv, replyv)
+	// Call service and respond
+	function := mtype.method.Func
+	// Invoke the method, providing a new value for the reply.
+	returnValues := function.Call([]reflect.Value{
+		service.rcvr,
+		argv,
+		replyv})
+	// The return value for the method is an error.
+	errInter := returnValues[0].Interface()
+	if errInter != nil {
+		return err
+	}
+	creplyv := reflect.ValueOf(call.Reply)
+	creplyv.Elem().Set(replyv.Elem())
+	return nil
 }
 
 func (server *Server) getService(id ServiceID) (*service, *methodType, error) {
