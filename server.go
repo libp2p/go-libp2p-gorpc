@@ -44,7 +44,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	peer "github.com/libp2p/go-libp2p-peer"
+	peer "gx/ipfs/QmfMmLGoKzCHDN7cGgk64PJr4iipzidDRME8HABSJqvmhC/go-libp2p-peer"
 
 	host "gx/ipfs/QmPTGbC34bPKaUm9wTxBo7zSCac7pDuG42ZmnXC718CKZZ/go-libp2p-host"
 	inet "gx/ipfs/QmQx1dHDDYENugYgqA22BaBrRfuv1coSsuPiM7rYh1wwGH/go-libp2p-net"
@@ -217,11 +217,12 @@ func (server *Server) Call(call *Call) error {
 	argIsValue := false // if true, need to indirect before calling.
 	if mtype.ArgType.Kind() == reflect.Ptr {
 		argv = reflect.New(mtype.ArgType.Elem())
+		argv.Elem().Set(reflect.ValueOf(call.Args).Elem())
 	} else {
 		argv = reflect.New(mtype.ArgType)
+		argv.Elem().Set(reflect.ValueOf(call.Args))
 		argIsValue = true
 	}
-	argv = reflect.ValueOf(call.Args)
 	if argIsValue {
 		argv = argv.Elem()
 	}

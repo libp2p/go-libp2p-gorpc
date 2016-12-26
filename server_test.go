@@ -35,6 +35,12 @@ func (t *Arith) Multiply(args *Args, reply *int) error {
 	return nil
 }
 
+// This uses non pointer args
+func (t *Arith) Add(args Args, reply *int) error {
+	*reply = args.A + args.B
+	return nil
+}
+
 func (t *Arith) Divide(args *Args, quo *Quotient) error {
 	if args.B == 0 {
 		return errors.New("divide by zero")
@@ -128,6 +134,15 @@ func TestRemote(t *testing.T) {
 		t.Error("result is:", r)
 	}
 
+	var a int
+	err = c.Call(h1.ID(), "Arith", "Add", Args{2, 3}, &a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != 5 {
+		t.Error("result is:", a)
+	}
+
 	var q Quotient
 	err = c.Call(h1.ID(), "Arith", "Divide", &Args{20, 6}, &q)
 	if err != nil {
@@ -149,12 +164,21 @@ func TestLocal(t *testing.T) {
 	s.Register(&arith)
 
 	var r int
-	err := c.Call(h1.ID(), "Arith", "Multiply", &Args{2, 3}, &r)
+	err := c.Call("", "Arith", "Multiply", &Args{2, 3}, &r)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r != 6 {
 		t.Error("result is:", r)
+	}
+
+	var a int
+	err = c.Call("", "Arith", "Add", Args{2, 3}, &a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != 5 {
+		t.Error("result is:", a)
 	}
 
 	var q Quotient
