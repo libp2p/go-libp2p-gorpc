@@ -95,8 +95,8 @@ func (c *Client) Go(dest peer.ID, svcName string, svcMethod string, args interfa
 		Error: nil,
 		Done:  done,
 	}
-	c.makeCall(call)
-	return call.Error
+	go c.makeCall(call)
+	return nil
 }
 
 // makeCall decides if a call can be performed. If it's a local
@@ -111,7 +111,8 @@ func (c *Client) makeCall(call *Call) {
 	}
 
 	if call.Dest == "" || call.Dest == c.host.ID() {
-		logger.Debug("making local call")
+		logger.Debugf("making local call: %s.%s",
+			call.SvcID.Name, call.SvcID.Method)
 		if c.server == nil {
 			err := errors.New("Cannot make local calls: server not set")
 			call.Error = err
@@ -121,6 +122,9 @@ func (c *Client) makeCall(call *Call) {
 		}
 		err := c.server.Call(call)
 		call.Error = err
+		if err != nil {
+			logger.Error(err)
+		}
 		call.done()
 		return
 	}
