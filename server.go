@@ -124,7 +124,7 @@ func NewServer(h host.Host, p protocol.ID) *Server {
 }
 
 // ID returns the peer.ID of the host associated with this server.
-func (server *Client) ID() peer.ID {
+func (server *Server) ID() peer.ID {
 	if server.host == nil {
 		panic("server has no host")
 	}
