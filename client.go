@@ -53,8 +53,17 @@ func NewClientWithServer(h host.Host, p protocol.ID, s *Server) *Client {
 	return c
 }
 
+// ID returns the peer.ID of the host associated with this client.
+func (c *Client) ID() peer.ID {
+	if c.host == nil {
+		panic("client has no host")
+	}
+	return c.host.ID()
+}
+
 // Call performs an RPC call to a registered Server service and blocks until
-// completed.
+// completed. If dest is empty ("") or matches the Client's host ID, it will
+// attempt to use the local configured Server when possible.
 func (c *Client) Call(dest peer.ID, svcName string, svcMethod string, args interface{}, reply interface{}) error {
 	done := make(chan *Call, 1)
 	c.Go(dest, svcName, svcMethod, args, reply, done)
@@ -67,6 +76,9 @@ func (c *Client) Call(dest peer.ID, svcName string, svcMethod string, args inter
 //
 // The provided done channel must be nil, or have capacity for 1 element
 // at least, or a panic will be triggered.
+//
+// If dest is empty ("") or matches the Client's host ID, it will
+// attempt to use the local configured Server when possible.
 func (c *Client) Go(dest peer.ID, svcName string, svcMethod string, args interface{}, reply interface{}, done chan *Call) error {
 	if done == nil {
 		done = make(chan *Call, 1)
@@ -98,7 +110,7 @@ func (c *Client) makeCall(call *Call) {
 		panic("no protocol set")
 	}
 
-	if call.Dest == c.host.ID() {
+	if call.Dest == "" || call.Dest == c.host.ID() {
 		logger.Debug("making local call")
 		if c.server == nil {
 			err := errors.New("Cannot make local calls: server not set")

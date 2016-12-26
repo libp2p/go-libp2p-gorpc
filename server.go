@@ -44,6 +44,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	peer "github.com/libp2p/go-libp2p-peer"
+
 	host "gx/ipfs/QmPTGbC34bPKaUm9wTxBo7zSCac7pDuG42ZmnXC718CKZZ/go-libp2p-host"
 	inet "gx/ipfs/QmQx1dHDDYENugYgqA22BaBrRfuv1coSsuPiM7rYh1wwGH/go-libp2p-net"
 	logging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
@@ -119,6 +121,14 @@ func NewServer(h host.Host, p protocol.ID) *Server {
 		}
 	})
 	return s
+}
+
+// ID returns the peer.ID of the host associated with this server.
+func (server *Client) ID() peer.ID {
+	if server.host == nil {
+		panic("server has no host")
+	}
+	return server.host.ID()
 }
 
 func (server *Server) handle(s *streamWrap) error {
