@@ -38,18 +38,19 @@ package rpc
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"reflect"
 	"sync"
 	"unicode"
 	"unicode/utf8"
 
-	peer "gx/ipfs/QmfMmLGoKzCHDN7cGgk64PJr4iipzidDRME8HABSJqvmhC/go-libp2p-peer"
+	peer "github.com/libp2p/go-libp2p-peer"
 
-	host "gx/ipfs/QmPTGbC34bPKaUm9wTxBo7zSCac7pDuG42ZmnXC718CKZZ/go-libp2p-host"
-	inet "gx/ipfs/QmQx1dHDDYENugYgqA22BaBrRfuv1coSsuPiM7rYh1wwGH/go-libp2p-net"
-	logging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
-	protocol "gx/ipfs/QmZNkThpqfVXs9GNbexPrfBbXSLNYeKrE7jwFM2oqHbyqN/go-libp2p-protocol"
+	logging "github.com/ipfs/go-log"
+	host "github.com/libp2p/go-libp2p-host"
+	inet "github.com/libp2p/go-libp2p-net"
+	protocol "github.com/libp2p/go-libp2p-protocol"
 )
 
 var logger = logging.Logger("libp2p-rpc")
@@ -216,13 +217,25 @@ func (server *Server) Call(call *Call) error {
 	// Decode the argument value.
 	argIsValue := false // if true, need to indirect before calling.
 	if mtype.ArgType.Kind() == reflect.Ptr {
+		if reflect.TypeOf(call.Args).Kind() != reflect.Ptr {
+			return fmt.Errorf(
+				"%s.%s is being called with the wrong arg type",
+				call.SvcID.Name, call.SvcID.Method)
+		}
 		argv = reflect.New(mtype.ArgType.Elem())
 		argv.Elem().Set(reflect.ValueOf(call.Args).Elem())
 	} else {
+		if reflect.TypeOf(call.Args).Kind() == reflect.Ptr {
+			return fmt.Errorf(
+				"%s.%s is being called with the wrong arg type",
+				call.SvcID.Name, call.SvcID.Method)
+		}
 		argv = reflect.New(mtype.ArgType)
 		argv.Elem().Set(reflect.ValueOf(call.Args))
 		argIsValue = true
 	}
+	// argv guaranteed to be a pointer here.
+	// need dereference if the method actually takes a value.
 	if argIsValue {
 		argv = argv.Elem()
 	}
