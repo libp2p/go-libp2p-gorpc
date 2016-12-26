@@ -19,6 +19,6 @@
   "license": "",
   "name": "go-libp2p-rpc",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "0.0.2"
+  "version": "0.0.3"
 }
 
