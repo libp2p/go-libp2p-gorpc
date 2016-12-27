@@ -45,11 +45,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	peer "github.com/libp2p/go-libp2p-peer"
-
 	logging "github.com/ipfs/go-log"
 	host "github.com/libp2p/go-libp2p-host"
 	inet "github.com/libp2p/go-libp2p-net"
+	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
 )
 
@@ -111,23 +110,25 @@ func NewServer(h host.Host, p protocol.ID) *Server {
 		protocol: p,
 	}
 
-	h.SetStreamHandler(p, func(stream inet.Stream) {
-		sWrap := wrapStream(stream)
-		defer stream.Close()
-		err := s.handle(sWrap)
-		if err != nil {
-			logger.Error("error handling RPC:", err)
-			resp := &Response{ServiceID{}, err.Error()}
-			sendResponse(sWrap, resp, nil)
-		}
-	})
+	if h != nil {
+		h.SetStreamHandler(p, func(stream inet.Stream) {
+			sWrap := wrapStream(stream)
+			defer stream.Close()
+			err := s.handle(sWrap)
+			if err != nil {
+				logger.Error("error handling RPC:", err)
+				resp := &Response{ServiceID{}, err.Error()}
+				sendResponse(sWrap, resp, nil)
+			}
+		})
+	}
 	return s
 }
 
 // ID returns the peer.ID of the host associated with this server.
 func (server *Server) ID() peer.ID {
 	if server.host == nil {
-		panic("server has no host")
+		return ""
 	}
 	return server.host.ID()
 }

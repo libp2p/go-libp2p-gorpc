@@ -56,7 +56,7 @@ func NewClientWithServer(h host.Host, p protocol.ID, s *Server) *Client {
 // ID returns the peer.ID of the host associated with this client.
 func (c *Client) ID() peer.ID {
 	if c.host == nil {
-		panic("client has no host")
+		return ""
 	}
 	return c.host.ID()
 }
@@ -102,22 +102,20 @@ func (c *Client) Go(dest peer.ID, svcName string, svcMethod string, args interfa
 // makeCall decides if a call can be performed. If it's a local
 // call it will use the configured server if set.
 func (c *Client) makeCall(call *Call) {
-	logger.Debug("make call")
-	if c.host == nil {
-		panic("no host set")
-	}
-	if c.protocol == "" {
-		panic("no protocol set")
-	}
+	logger.Debugf("makeCall: %s.%s",
+		call.SvcID.Name,
+		call.SvcID.Method)
 
+	// Handle local RPC calls
 	if call.Dest == "" || call.Dest == c.host.ID() {
-		logger.Debugf("making local call: %s.%s",
+		logger.Debugf("local call: %s.%s",
 			call.SvcID.Name, call.SvcID.Method)
 		if c.server == nil {
-			err := errors.New("Cannot make local calls: server not set")
+			err := errors.New(
+				"Cannot make local calls: server not set")
+			logger.Error(err)
 			call.Error = err
 			call.done()
-			logger.Error(err)
 			return
 		}
 		err := c.server.Call(call)
@@ -127,6 +125,14 @@ func (c *Client) makeCall(call *Call) {
 		}
 		call.done()
 		return
+	}
+
+	// Handle remote RPC calls
+	if c.host == nil {
+		panic("no host set: cannot perform remote call")
+	}
+	if c.protocol == "" {
+		panic("no protocol set: cannot perform remote call")
 	}
 	c.send(call)
 }
