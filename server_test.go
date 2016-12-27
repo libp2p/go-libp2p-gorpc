@@ -50,6 +50,10 @@ func (t *Arith) Divide(args *Args, quo *Quotient) error {
 	return nil
 }
 
+func (t *Arith) GimmeError(args *Args, quo *Quotient) error {
+	return errors.New("an error")
+}
+
 func makeRandomNodes() (h1, h2 host.Host) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	pid1, _ := peer.IDFromPublicKey(pub1)
@@ -188,5 +192,29 @@ func TestLocal(t *testing.T) {
 	}
 	if q.Quo != 3 || q.Rem != 2 {
 		t.Error("bad division")
+	}
+}
+
+func TestErrorResponse(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	s := NewServer(h1, "rpc")
+	var arith Arith
+	s.Register(&arith)
+
+	// test remote
+	c := NewClientWithServer(h2, "rpc", s)
+	err := c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &struct{}{})
+	if err == nil || err.Error() != "an error" {
+		t.Error("expected different error")
+	}
+
+	// test local
+	c = NewClientWithServer(h1, "rpc", s)
+	err = c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &struct{}{})
+	if err == nil || err.Error() != "an error" {
+		t.Error("expected different error")
 	}
 }

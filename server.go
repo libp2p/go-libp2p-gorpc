@@ -253,7 +253,7 @@ func (server *Server) Call(call *Call) error {
 	// The return value for the method is an error.
 	errInter := returnValues[0].Interface()
 	if errInter != nil {
-		return err
+		return errInter.(error)
 	}
 	creplyv := reflect.ValueOf(call.Reply)
 	creplyv.Elem().Set(replyv.Elem())
