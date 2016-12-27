@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"io"
 
 	host "github.com/libp2p/go-libp2p-host"
 	peer "github.com/libp2p/go-libp2p-peer"
@@ -186,13 +187,14 @@ func receiveResponse(s *streamWrap, call *Call) {
 
 	if e := resp.Error; e != "" {
 		call.Error = errors.New(e)
-		return
 	}
 
-	if err := s.dec.Decode(call.Reply); err != nil {
+	// Even on error we sent the reply so it needs to be
+	// read
+	if err := s.dec.Decode(call.Reply); err != nil && err != io.EOF {
 		call.Error = err
-		return
 	}
+	return
 }
 
 // done places the completed call in the done channel.

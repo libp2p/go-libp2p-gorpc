@@ -250,13 +250,15 @@ func (server *Server) Call(call *Call) error {
 		service.rcvr,
 		argv,
 		replyv})
+
+	creplyv := reflect.ValueOf(call.Reply)
+	creplyv.Elem().Set(replyv.Elem())
+
 	// The return value for the method is an error.
 	errInter := returnValues[0].Interface()
 	if errInter != nil {
 		return errInter.(error)
 	}
-	creplyv := reflect.ValueOf(call.Reply)
-	creplyv.Elem().Set(replyv.Elem())
 	return nil
 }
 

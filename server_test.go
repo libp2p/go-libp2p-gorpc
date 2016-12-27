@@ -50,7 +50,8 @@ func (t *Arith) Divide(args *Args, quo *Quotient) error {
 	return nil
 }
 
-func (t *Arith) GimmeError(args *Args, quo *Quotient) error {
+func (t *Arith) GimmeError(args *Args, r *int) error {
+	*r = 42
 	return errors.New("an error")
 }
 
@@ -204,17 +205,24 @@ func TestErrorResponse(t *testing.T) {
 	var arith Arith
 	s.Register(&arith)
 
+	var r int
 	// test remote
 	c := NewClientWithServer(h2, "rpc", s)
-	err := c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &struct{}{})
+	err := c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &r)
 	if err == nil || err.Error() != "an error" {
 		t.Error("expected different error")
+	}
+	if r != 42 {
+		t.Error("response should be set even on error")
 	}
 
 	// test local
 	c = NewClientWithServer(h1, "rpc", s)
-	err = c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &struct{}{})
+	err = c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &r)
 	if err == nil || err.Error() != "an error" {
 		t.Error("expected different error")
+	}
+	if r != 42 {
+		t.Error("response should be set even on error")
 	}
 }
