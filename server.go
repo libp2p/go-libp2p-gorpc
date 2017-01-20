@@ -279,6 +279,10 @@ func (server *Server) getService(id ServiceID) (*service, *methodType, error) {
 	return service, mtype, nil
 }
 
+// All code below is provided under:
+// Copyright (c) 2009 The Go Authors. All rights reserved.
+// and the corresponding license. See LICENSE for more details.
+
 // Is this an exported - upper case - name?
 func isExported(name string) bool {
 	rune, _ := utf8.DecodeRuneInString(name)
