@@ -3,9 +3,9 @@ package rpc
 import (
 	"bufio"
 
-	"github.com/ugorji/go/codec"
-
 	inet "github.com/libp2p/go-libp2p-net"
+	multicodec "github.com/multiformats/go-multicodec"
+	cbor "github.com/multiformats/go-multicodec/cbor"
 )
 
 // streamWrap wraps a libp2p stream. We encode/decode whenever we
@@ -13,8 +13,8 @@ import (
 // and bufios with us
 type streamWrap struct {
 	stream inet.Stream
-	enc    *codec.Encoder
-	dec    *codec.Decoder
+	enc    multicodec.Encoder
+	dec    multicodec.Decoder
 	w      *bufio.Writer
 	r      *bufio.Reader
 }
@@ -27,8 +27,8 @@ type streamWrap struct {
 func wrapStream(s inet.Stream) *streamWrap {
 	reader := bufio.NewReader(s)
 	writer := bufio.NewWriter(s)
-	dec := codec.NewDecoder(reader, &codec.MsgpackHandle{})
-	enc := codec.NewEncoder(writer, &codec.MsgpackHandle{})
+	dec := cbor.Multicodec().Decoder(reader)
+	enc := cbor.Multicodec().Encoder(writer)
 	return &streamWrap{
 		stream: s,
 		r:      reader,

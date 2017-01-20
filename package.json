@@ -12,6 +12,12 @@
       "hash": "QmdzDdLZ7nj133QvNHypyS9Y39g35bMFk5DJ2pmX7YqtKU",
       "name": "go-libp2p",
       "version": "4.3.5"
+    },
+    {
+      "author": "multiformats",
+      "hash": "QmP6H1kAKEHohE2U4GE4PiiRtXp37L5Bxfwi4EvxV7Jn5K",
+      "name": "go-multicodec",
+      "version": "0.1.0"
     }
   ],
   "gxVersion": "0.10.0",
