@@ -23,7 +23,7 @@
   "gxVersion": "0.10.0",
   "language": "go",
   "license": "MIT/BSD",
-  "name": "go-libp2p-rpc",
+  "name": "go-libp2p-gorpc",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
   "version": "0.0.12"
 }

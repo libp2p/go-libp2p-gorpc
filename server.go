@@ -52,7 +52,7 @@ import (
 	protocol "github.com/libp2p/go-libp2p-protocol"
 )
 
-var logger = logging.Logger("libp2p-rpc")
+var logger = logging.Logger("p2p-gorpc")
 
 // Precompute the reflect type for error. Can't use error directly
 // because Typeof takes an empty interface value. This is annoying.
