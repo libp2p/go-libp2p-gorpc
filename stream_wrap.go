@@ -5,7 +5,7 @@ import (
 
 	inet "github.com/libp2p/go-libp2p-net"
 	multicodec "github.com/multiformats/go-multicodec"
-	cbor "github.com/multiformats/go-multicodec/cbor"
+	msgpack "github.com/multiformats/go-multicodec/msgpack"
 )
 
 // streamWrap wraps a libp2p stream. We encode/decode whenever we
@@ -27,8 +27,8 @@ type streamWrap struct {
 func wrapStream(s inet.Stream) *streamWrap {
 	reader := bufio.NewReader(s)
 	writer := bufio.NewWriter(s)
-	dec := cbor.Multicodec().Decoder(reader)
-	enc := cbor.Multicodec().Encoder(writer)
+	dec := msgpack.Multicodec(msgpack.DefaultMsgpackHandle()).Decoder(reader)
+	enc := msgpack.Multicodec(msgpack.DefaultMsgpackHandle()).Encoder(writer)
 	return &streamWrap{
 		stream: s,
 		r:      reader,
@@ -36,4 +36,5 @@ func wrapStream(s inet.Stream) *streamWrap {
 		enc:    enc,
 		dec:    dec,
 	}
+
 }
