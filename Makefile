@@ -4,7 +4,6 @@ gx:
 	go get github.com/whyrusleeping/gx
 	go get github.com/whyrusleeping/gx-go
 deps: gx
-	go get github.com/ugorji/go/codec
 	gx --verbose install --global
 	gx-go rewrite
 test: deps
