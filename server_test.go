@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,8 @@ import (
 )
 
 func init() {
-	logging.SetLogLevel("rpc", "DEBUG")
+	logging.SetLogLevel("p2p-gorpc", "DEBUG")
+	//logging.SetDebugLogging()
 }
 
 type Args struct {
@@ -53,6 +55,11 @@ func (t *Arith) Divide(args *Args, quo *Quotient) error {
 func (t *Arith) GimmeError(args *Args, r *int) error {
 	*r = 42
 	return errors.New("an error")
+}
+
+func (t *Arith) Sleep(secs int, res *struct{}) error {
+	time.Sleep(time.Duration(secs) * time.Second)
+	return nil
 }
 
 func makeRandomNodes() (h1, h2 host.Host) {
@@ -224,5 +231,50 @@ func TestErrorResponse(t *testing.T) {
 	}
 	if r != 42 {
 		t.Error("response should be set even on error")
+	}
+}
+
+func TestCallWithContext(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+	s := NewServer(h1, "rpc")
+	c := NewClientWithServer(h2, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
+	defer cancel()
+	err := c.CallWithContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+
+	if !strings.Contains(err.Error(), "context") {
+		t.Error("expected a context error:", err)
+	}
+}
+
+func TestGoWithContext(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+	s := NewServer(h1, "rpc")
+	c := NewClientWithServer(h2, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
+	defer cancel()
+
+	done := make(chan *Call, 1)
+	err := c.GoWithContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{}, done)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	call := <-done
+	if call.Error == nil || !strings.Contains(call.Error.Error(), "context") {
+		t.Error("expected a context error:", err)
 	}
 }
