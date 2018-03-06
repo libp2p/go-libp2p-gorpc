@@ -30,20 +30,22 @@ type Quotient struct {
 	Quo, Rem int
 }
 
-type Arith int
+type Arith struct {
+	ctxCancelled bool
+}
 
-func (t *Arith) Multiply(args *Args, reply *int) error {
+func (t *Arith) Multiply(ctx context.Context, args *Args, reply *int) error {
 	*reply = args.A * args.B
 	return nil
 }
 
 // This uses non pointer args
-func (t *Arith) Add(args Args, reply *int) error {
+func (t *Arith) Add(ctx context.Context, args Args, reply *int) error {
 	*reply = args.A + args.B
 	return nil
 }
 
-func (t *Arith) Divide(args *Args, quo *Quotient) error {
+func (t *Arith) Divide(ctx context.Context, args *Args, quo *Quotient) error {
 	if args.B == 0 {
 		return errors.New("divide by zero")
 	}
@@ -52,13 +54,20 @@ func (t *Arith) Divide(args *Args, quo *Quotient) error {
 	return nil
 }
 
-func (t *Arith) GimmeError(args *Args, r *int) error {
+func (t *Arith) GimmeError(ctx context.Context, args *Args, r *int) error {
 	*r = 42
 	return errors.New("an error")
 }
 
-func (t *Arith) Sleep(secs int, res *struct{}) error {
-	time.Sleep(time.Duration(secs) * time.Second)
+func (t *Arith) Sleep(ctx context.Context, secs int, res *struct{}) error {
+	tim := time.NewTimer(time.Duration(secs) * time.Second)
+	select {
+	case <-ctx.Done():
+		t.ctxCancelled = true
+		return ctx.Err()
+	case <-tim.C:
+		return nil
+	}
 	return nil
 }
 
@@ -234,7 +243,7 @@ func TestErrorResponse(t *testing.T) {
 	}
 }
 
-func TestCallWithContext(t *testing.T) {
+func TestCallWithContextLocal(t *testing.T) {
 	h1, h2 := makeRandomNodes()
 	defer h1.Close()
 	defer h2.Close()
@@ -243,7 +252,36 @@ func TestCallWithContext(t *testing.T) {
 	var arith Arith
 	s.Register(&arith)
 
+	// Local
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
+	defer cancel()
+	err := c.CallWithContext(ctx, h2.ID(), "Arith", "Sleep", 5, &struct{}{})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+
+	if !strings.Contains(err.Error(), "context") {
+		t.Error("expected a context error:", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if !arith.ctxCancelled {
+		t.Error("expected ctx cancellation in the function")
+	}
+}
+
+func TestCallWithContextRemote(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+	s := NewServer(h1, "rpc")
+	c := NewClient(h2, "rpc")
+	var arith Arith
+	s.Register(&arith)
+
+	// Local
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := c.CallWithContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{})
 	if err == nil {
@@ -252,6 +290,12 @@ func TestCallWithContext(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "context") {
 		t.Error("expected a context error:", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if !arith.ctxCancelled {
+		t.Error("expected ctx cancellation in the function")
 	}
 }
 

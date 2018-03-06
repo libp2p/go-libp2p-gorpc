@@ -137,10 +137,10 @@ func (c *Client) makeCall(call *Call) {
 // destination and waiting for a response.
 func (c *Client) send(call *Call) {
 	logger.Debug("sending remote call")
+
 	s, err := c.host.NewStream(call.ctx, call.Dest, c.protocol)
 	if err != nil {
-		call.Error = err
-		call.Done <- call
+		call.doneWithError(err)
 		return
 	}
 	defer s.Close()

@@ -73,18 +73,11 @@ func (call *Call) watchContextWithStream(s inet.Stream) {
 	select {
 	case <-call.ctx.Done():
 		if !call.isFinished() { // context was cancelled not by us
-			s.Reset()
-			call.doneWithError(call.ctx.Err())
-		}
-	}
-}
-
-// watch context will wait for a context cancellation
-// and close the stream.
-func (call *Call) watchContext() {
-	select {
-	case <-call.ctx.Done():
-		if !call.isFinished() { // context was cancelled not by us
+			logger.Debug("call context is done before finishing")
+			// Close() instead of Reset(). This let's the other
+			// write to the stream without printing errors to
+			// the console (graceful fail).
+			s.Close()
 			call.doneWithError(call.ctx.Err())
 		}
 	}
