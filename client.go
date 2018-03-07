@@ -113,16 +113,11 @@ func (c *Client) makeCall(call *Call) {
 		if c.server == nil {
 			err := errors.New(
 				"Cannot make local calls: server not set")
-			logger.Error(err)
 			call.doneWithError(err)
 			return
 		}
 		err := c.server.Call(call)
-		call.Error = err
-		if err != nil {
-			logger.Error(err)
-		}
-		call.done()
+		call.doneWithError(err)
 		return
 	}
 
@@ -185,13 +180,13 @@ func receiveResponse(s *streamWrap, call *Call) {
 
 	defer call.done()
 	if e := resp.Error; e != "" {
-		call.Error = errors.New(e)
+		call.setError(errors.New(e))
 	}
 
 	// Even on error we sent the reply so it needs to be
 	// read
 	if err := s.dec.Decode(call.Reply); err != nil && err != io.EOF {
-		call.Error = err
+		call.setError(err)
 	}
 	return
 }

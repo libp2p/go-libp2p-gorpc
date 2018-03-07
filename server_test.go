@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,7 +32,15 @@ type Quotient struct {
 }
 
 type Arith struct {
-	ctxCancelled bool
+	sleepCancelledMu sync.Mutex
+	sleepCancelled   bool
+}
+
+// helper to see if we cancelled the context in Sleep()
+func (t *Arith) isSleepCancelled() bool {
+	t.sleepCancelledMu.Lock()
+	defer t.sleepCancelledMu.Unlock()
+	return t.sleepCancelled
 }
 
 func (t *Arith) Multiply(ctx context.Context, args *Args, reply *int) error {
@@ -63,7 +72,9 @@ func (t *Arith) Sleep(ctx context.Context, secs int, res *struct{}) error {
 	tim := time.NewTimer(time.Duration(secs) * time.Second)
 	select {
 	case <-ctx.Done():
-		t.ctxCancelled = true
+		t.sleepCancelledMu.Lock()
+		t.sleepCancelled = true
+		t.sleepCancelledMu.Unlock()
 		return ctx.Err()
 	case <-tim.C:
 		return nil
@@ -266,7 +277,7 @@ func TestCallContextLocal(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if !arith.ctxCancelled {
+	if !arith.isSleepCancelled() {
 		t.Error("expected ctx cancellation in the function")
 	}
 }
@@ -294,7 +305,7 @@ func TestCallContextRemote(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if !arith.ctxCancelled {
+	if !arith.isSleepCancelled() {
 		t.Error("expected ctx cancellation in the function")
 	}
 }

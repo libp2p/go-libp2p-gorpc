@@ -22,8 +22,11 @@ type Call struct {
 	SvcID ServiceID   // The name of the service and method to call.
 	Args  interface{} // The argument to the function (*struct).
 	Reply interface{} // The reply from the function (*struct).
-	Error error       // After completion, the error status.
 	Done  chan *Call  // Strobes when call is complete.
+
+	errorMu sync.Mutex
+	Error   error // After completion, the error status.
+
 }
 
 func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args interface{}, reply interface{}, done chan *Call) *Call {
@@ -57,7 +60,10 @@ func (call *Call) done() {
 }
 
 func (call *Call) doneWithError(err error) {
-	call.Error = err
+	if err != nil {
+		logger.Error(err)
+		call.setError(err)
+	}
 	call.done()
 }
 
@@ -80,5 +86,13 @@ func (call *Call) watchContextWithStream(s inet.Stream) {
 			s.Close()
 			call.doneWithError(call.ctx.Err())
 		}
+	}
+}
+
+func (call *Call) setError(err error) {
+	call.errorMu.Lock()
+	defer call.errorMu.Unlock()
+	if call.Error == nil {
+		call.Error = err
 	}
 }
