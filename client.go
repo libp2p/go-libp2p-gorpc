@@ -55,12 +55,12 @@ func (c *Client) ID() peer.ID {
 // attempt to use the local configured Server when possible.
 func (c *Client) Call(dest peer.ID, svcName string, svcMethod string, args, reply interface{}) error {
 	ctx := context.Background()
-	return c.CallWithContext(ctx, dest, svcName, svcMethod, args, reply)
+	return c.CallContext(ctx, dest, svcName, svcMethod, args, reply)
 }
 
-// CallWithContext performs a Call() with a user provided context. This gives
+// CallContext performs a Call() with a user provided context. This gives
 // the user the possibility of cancelling the operation at any point.
-func (c *Client) CallWithContext(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}) error {
+func (c *Client) CallContext(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}) error {
 	done := make(chan *Call, 1)
 	call := newCall(ctx, dest, svcName, svcMethod, args, reply, done)
 	go c.makeCall(call)
@@ -78,12 +78,15 @@ func (c *Client) CallWithContext(ctx context.Context, dest peer.ID, svcName, svc
 // attempt to use the local configured Server when possible.
 func (c *Client) Go(dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) error {
 	ctx := context.Background()
-	return c.GoWithContext(ctx, dest, svcName, svcMethod, args, reply, done)
+	return c.GoContext(ctx, dest, svcName, svcMethod, args, reply, done)
 }
 
-// GoWithContext performs a Go() call with the provided context, allowing
-// the user to cancel the operation.
-func (c *Client) GoWithContext(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) error {
+// GoContext performs a Go() call with the provided context, allowing
+// the user to cancel the operation. See Go() documentation for more information.
+//
+// The provided done channel must be nil, or have capacity for 1 element
+// at least, or a panic will be triggered.
+func (c *Client) GoContext(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) error {
 	if done == nil {
 		done = make(chan *Call, 1)
 	} else {

@@ -15,8 +15,8 @@ type Call struct {
 	ctx    context.Context
 	cancel func()
 
-	finished   bool
 	finishedMu sync.RWMutex
+	finished   bool
 
 	Dest  peer.ID
 	SvcID ServiceID   // The name of the service and method to call.

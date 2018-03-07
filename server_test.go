@@ -243,7 +243,7 @@ func TestErrorResponse(t *testing.T) {
 	}
 }
 
-func TestCallWithContextLocal(t *testing.T) {
+func TestCallContextLocal(t *testing.T) {
 	h1, h2 := makeRandomNodes()
 	defer h1.Close()
 	defer h2.Close()
@@ -255,7 +255,7 @@ func TestCallWithContextLocal(t *testing.T) {
 	// Local
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
 	defer cancel()
-	err := c.CallWithContext(ctx, h2.ID(), "Arith", "Sleep", 5, &struct{}{})
+	err := c.CallContext(ctx, h2.ID(), "Arith", "Sleep", 5, &struct{}{})
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -271,7 +271,7 @@ func TestCallWithContextLocal(t *testing.T) {
 	}
 }
 
-func TestCallWithContextRemote(t *testing.T) {
+func TestCallContextRemote(t *testing.T) {
 	h1, h2 := makeRandomNodes()
 	defer h1.Close()
 	defer h2.Close()
@@ -283,7 +283,7 @@ func TestCallWithContextRemote(t *testing.T) {
 	// Local
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	err := c.CallWithContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{})
+	err := c.CallContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{})
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -299,7 +299,7 @@ func TestCallWithContextRemote(t *testing.T) {
 	}
 }
 
-func TestGoWithContext(t *testing.T) {
+func TestGoContext(t *testing.T) {
 	h1, h2 := makeRandomNodes()
 	defer h1.Close()
 	defer h2.Close()
@@ -312,7 +312,7 @@ func TestGoWithContext(t *testing.T) {
 	defer cancel()
 
 	done := make(chan *Call, 1)
-	err := c.GoWithContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{}, done)
+	err := c.GoContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{}, done)
 	if err != nil {
 		t.Fatal(err)
 	}
