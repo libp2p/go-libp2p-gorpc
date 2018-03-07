@@ -31,16 +31,25 @@ type Quotient struct {
 	Quo, Rem int
 }
 
-type Arith struct {
-	sleepCancelledMu sync.Mutex
-	sleepCancelled   bool
+type ctxTracker struct {
+	ctxMu sync.Mutex
+	ctx   context.Context
 }
 
-// helper to see if we cancelled the context in Sleep()
-func (t *Arith) isSleepCancelled() bool {
-	t.sleepCancelledMu.Lock()
-	defer t.sleepCancelledMu.Unlock()
-	return t.sleepCancelled
+func (ctxt *ctxTracker) setCtx(ctx context.Context) {
+	ctxt.ctxMu.Lock()
+	defer ctxt.ctxMu.Unlock()
+	ctxt.ctx = ctx
+}
+
+func (ctxt *ctxTracker) cancelled() bool {
+	ctxt.ctxMu.Lock()
+	defer ctxt.ctxMu.Unlock()
+	return ctxt.ctx.Err() != nil
+}
+
+type Arith struct {
+	ctxTracker *ctxTracker
 }
 
 func (t *Arith) Multiply(ctx context.Context, args *Args, reply *int) error {
@@ -69,17 +78,14 @@ func (t *Arith) GimmeError(ctx context.Context, args *Args, r *int) error {
 }
 
 func (t *Arith) Sleep(ctx context.Context, secs int, res *struct{}) error {
+	t.ctxTracker.setCtx(ctx)
 	tim := time.NewTimer(time.Duration(secs) * time.Second)
 	select {
 	case <-ctx.Done():
-		t.sleepCancelledMu.Lock()
-		t.sleepCancelled = true
-		t.sleepCancelledMu.Unlock()
 		return ctx.Err()
 	case <-tim.C:
 		return nil
 	}
-	return nil
 }
 
 func makeRandomNodes() (h1, h2 host.Host) {
@@ -261,6 +267,7 @@ func TestCallContextLocal(t *testing.T) {
 	s := NewServer(h1, "rpc")
 	c := NewClientWithServer(h2, "rpc", s)
 	var arith Arith
+	arith.ctxTracker = &ctxTracker{}
 	s.Register(&arith)
 
 	// Local
@@ -277,7 +284,7 @@ func TestCallContextLocal(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if !arith.isSleepCancelled() {
+	if !arith.ctxTracker.cancelled() {
 		t.Error("expected ctx cancellation in the function")
 	}
 }
@@ -289,6 +296,7 @@ func TestCallContextRemote(t *testing.T) {
 	s := NewServer(h1, "rpc")
 	c := NewClient(h2, "rpc")
 	var arith Arith
+	arith.ctxTracker = &ctxTracker{}
 	s.Register(&arith)
 
 	// Local
@@ -305,7 +313,7 @@ func TestCallContextRemote(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if !arith.isSleepCancelled() {
+	if !arith.ctxTracker.cancelled() {
 		t.Error("expected ctx cancellation in the function")
 	}
 }
@@ -317,6 +325,7 @@ func TestGoContext(t *testing.T) {
 	s := NewServer(h1, "rpc")
 	c := NewClientWithServer(h2, "rpc", s)
 	var arith Arith
+	arith.ctxTracker = &ctxTracker{}
 	s.Register(&arith)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
