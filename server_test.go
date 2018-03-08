@@ -282,8 +282,6 @@ func TestCallContextLocal(t *testing.T) {
 		t.Error("expected a context error:", err)
 	}
 
-	time.Sleep(200 * time.Millisecond)
-
 	if !arith.ctxTracker.cancelled() {
 		t.Error("expected ctx cancellation in the function")
 	}
@@ -299,7 +297,6 @@ func TestCallContextRemote(t *testing.T) {
 	arith.ctxTracker = &ctxTracker{}
 	s.Register(&arith)
 
-	// Local
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := c.CallContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{})

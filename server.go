@@ -1,6 +1,6 @@
 /*
-Package rpc is heavily inspired by Go standard net/rpc package. It aims to do
-the same function, except it uses Libp2p for communication and provides
+Package rpc is heavily inspired by Go standard net/rpc package. It aims to
+do the same thing, except it uses Libp2p for communication and provides
 context support for cancelling operations.
 
 A server registers an object, making it visible as a service with the name of
