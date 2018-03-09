@@ -10,18 +10,6 @@ import (
 	protocol "github.com/libp2p/go-libp2p-protocol"
 )
 
-// Call represents an active RPC. Calls are used to indicate completion
-// of RPC requests and are returned within the provided channel in
-// the Go() and Call() functions.
-type Call struct {
-	Dest  peer.ID
-	SvcID ServiceID   // The name of the service and method to call.
-	Args  interface{} // The argument to the function (*struct).
-	Reply interface{} // The reply from the function (*struct).
-	Error error       // After completion, the error status.
-	Done  chan *Call  // Strobes when call is complete.
-}
-
 // Client represents an RPC client which can perform calls to a remote
 // (or local, see below) Server.
 type Client struct {
@@ -65,10 +53,18 @@ func (c *Client) ID() peer.ID {
 // Call performs an RPC call to a registered Server service and blocks until
 // completed. If dest is empty ("") or matches the Client's host ID, it will
 // attempt to use the local configured Server when possible.
-func (c *Client) Call(dest peer.ID, svcName string, svcMethod string, args interface{}, reply interface{}) error {
+func (c *Client) Call(dest peer.ID, svcName string, svcMethod string, args, reply interface{}) error {
+	ctx := context.Background()
+	return c.CallContext(ctx, dest, svcName, svcMethod, args, reply)
+}
+
+// CallContext performs a Call() with a user provided context. This gives
+// the user the possibility of cancelling the operation at any point.
+func (c *Client) CallContext(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}) error {
 	done := make(chan *Call, 1)
-	c.Go(dest, svcName, svcMethod, args, reply, done)
-	call := <-done
+	call := newCall(ctx, dest, svcName, svcMethod, args, reply, done)
+	go c.makeCall(call)
+	<-done
 	return call.Error
 }
 
@@ -80,7 +76,17 @@ func (c *Client) Call(dest peer.ID, svcName string, svcMethod string, args inter
 //
 // If dest is empty ("") or matches the Client's host ID, it will
 // attempt to use the local configured Server when possible.
-func (c *Client) Go(dest peer.ID, svcName string, svcMethod string, args interface{}, reply interface{}, done chan *Call) error {
+func (c *Client) Go(dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) error {
+	ctx := context.Background()
+	return c.GoContext(ctx, dest, svcName, svcMethod, args, reply, done)
+}
+
+// GoContext performs a Go() call with the provided context, allowing
+// the user to cancel the operation. See Go() documentation for more information.
+//
+// The provided done channel must be nil, or have capacity for 1 element
+// at least, or a panic will be triggered.
+func (c *Client) GoContext(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) error {
 	if done == nil {
 		done = make(chan *Call, 1)
 	} else {
@@ -88,14 +94,7 @@ func (c *Client) Go(dest peer.ID, svcName string, svcMethod string, args interfa
 			panic("done channel has no capacity")
 		}
 	}
-	call := &Call{
-		Dest:  dest,
-		SvcID: ServiceID{svcName, svcMethod},
-		Args:  args,
-		Reply: reply,
-		Error: nil,
-		Done:  done,
-	}
+	call := newCall(ctx, dest, svcName, svcMethod, args, reply, done)
 	go c.makeCall(call)
 	return nil
 }
@@ -114,17 +113,11 @@ func (c *Client) makeCall(call *Call) {
 		if c.server == nil {
 			err := errors.New(
 				"Cannot make local calls: server not set")
-			logger.Error(err)
-			call.Error = err
-			call.done()
+			call.doneWithError(err)
 			return
 		}
 		err := c.server.Call(call)
-		call.Error = err
-		if err != nil {
-			logger.Error(err)
-		}
-		call.done()
+		call.doneWithError(err)
 		return
 	}
 
@@ -142,33 +135,33 @@ func (c *Client) makeCall(call *Call) {
 // destination and waiting for a response.
 func (c *Client) send(call *Call) {
 	logger.Debug("sending remote call")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	s, err := c.host.NewStream(ctx, call.Dest, c.protocol)
+
+	s, err := c.host.NewStream(call.ctx, call.Dest, c.protocol)
 	if err != nil {
-		call.Error = err
-		call.Done <- call
+		call.doneWithError(err)
 		return
 	}
 	defer s.Close()
+	go call.watchContextWithStream(s)
+
 	sWrap := wrapStream(s)
 
 	logger.Debugf("sending RPC %s.%s to %s", call.SvcID.Name,
 		call.SvcID.Method, call.Dest)
 	if err := sWrap.enc.Encode(call.SvcID); err != nil {
-		call.Error = err
-		call.done()
+		call.doneWithError(err)
+		s.Reset()
 		return
 	}
 	if err := sWrap.enc.Encode(call.Args); err != nil {
-		call.Error = err
-		call.done()
+		call.doneWithError(err)
+		s.Reset()
 		return
 	}
 
 	if err := sWrap.w.Flush(); err != nil {
-		call.Error = err
-		call.done()
+		call.doneWithError(err)
+		s.Reset()
 		return
 	}
 	receiveResponse(sWrap, call)
@@ -179,31 +172,21 @@ func receiveResponse(s *streamWrap, call *Call) {
 	logger.Debugf("waiting response for %s.%s to %s", call.SvcID.Name,
 		call.SvcID.Method, call.Dest)
 	var resp Response
-	defer call.done()
 	if err := s.dec.Decode(&resp); err != nil {
-		call.Error = err
+		call.doneWithError(err)
+		s.stream.Reset()
 		return
 	}
 
+	defer call.done()
 	if e := resp.Error; e != "" {
-		call.Error = errors.New(e)
+		call.setError(errors.New(e))
 	}
 
 	// Even on error we sent the reply so it needs to be
 	// read
 	if err := s.dec.Decode(call.Reply); err != nil && err != io.EOF {
-		call.Error = err
+		call.setError(err)
 	}
 	return
-}
-
-// done places the completed call in the done channel.
-func (call *Call) done() {
-	select {
-	case call.Done <- call:
-		// ok
-	default:
-		logger.Debugf("discarding %s.%s call reply",
-			call.SvcID.Name, call.SvcID.Method)
-	}
 }
