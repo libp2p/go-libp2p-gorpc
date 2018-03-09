@@ -154,50 +154,9 @@ func TestRegister(t *testing.T) {
 
 }
 
-func TestRemote(t *testing.T) {
-	h1, h2 := makeRandomNodes()
-	defer h1.Close()
-	defer h2.Close()
-	s := NewServer(h1, "rpc")
-	c := NewClientWithServer(h2, "rpc", s)
-	var arith Arith
-	s.Register(&arith)
-
-	var r int
-	err := c.Call(h1.ID(), "Arith", "Multiply", &Args{2, 3}, &r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r != 6 {
-		t.Error("result is:", r)
-	}
-
-	var a int
-	err = c.Call(h1.ID(), "Arith", "Add", Args{2, 3}, &a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a != 5 {
-		t.Error("result is:", a)
-	}
-
-	var q Quotient
-	err = c.Call(h1.ID(), "Arith", "Divide", &Args{20, 6}, &q)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if q.Quo != 3 || q.Rem != 2 {
-		t.Error("bad division")
-	}
-}
-
-func TestLocal(t *testing.T) {
-	h1, h2 := makeRandomNodes()
-	defer h1.Close()
-	defer h2.Close()
-
-	s := NewServer(h1, "rpc")
-	c := NewClientWithServer(h1, "rpc", s)
+func testCall(t *testing.T, servNode, clientNode host.Host, dest peer.ID) {
+	s := NewServer(servNode, "rpc")
+	c := NewClientWithServer(clientNode, "rpc", s)
 	var arith Arith
 	s.Register(&arith)
 
@@ -220,13 +179,26 @@ func TestLocal(t *testing.T) {
 	}
 
 	var q Quotient
-	err = c.Call(h1.ID(), "Arith", "Divide", &Args{20, 6}, &q)
+	err = c.Call(dest, "Arith", "Divide", &Args{20, 6}, &q)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if q.Quo != 3 || q.Rem != 2 {
 		t.Error("bad division")
 	}
+}
+
+func TestCall(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	t.Run("local", func(t *testing.T) {
+		testCall(t, h1, h2, "")
+	})
+	t.Run("remote", func(t *testing.T) {
+		testCall(t, h1, h2, h1.ID())
+	})
 }
 
 func TestErrorResponse(t *testing.T) {
@@ -260,46 +232,17 @@ func TestErrorResponse(t *testing.T) {
 	}
 }
 
-func TestCallContextLocal(t *testing.T) {
-	h1, h2 := makeRandomNodes()
-	defer h1.Close()
-	defer h2.Close()
-	s := NewServer(h1, "rpc")
-	c := NewClientWithServer(h2, "rpc", s)
+func testCallContext(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
+	s := NewServer(servHost, "rpc")
+	c := NewClientWithServer(clientHost, "rpc", s)
+
 	var arith Arith
 	arith.ctxTracker = &ctxTracker{}
 	s.Register(&arith)
 
-	// Local
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
 	defer cancel()
-	err := c.CallContext(ctx, h2.ID(), "Arith", "Sleep", 5, &struct{}{})
-	if err == nil {
-		t.Fatal("expected an error")
-	}
-
-	if !strings.Contains(err.Error(), "context") {
-		t.Error("expected a context error:", err)
-	}
-
-	if !arith.ctxTracker.cancelled() {
-		t.Error("expected ctx cancellation in the function")
-	}
-}
-
-func TestCallContextRemote(t *testing.T) {
-	h1, h2 := makeRandomNodes()
-	defer h1.Close()
-	defer h2.Close()
-	s := NewServer(h1, "rpc")
-	c := NewClient(h2, "rpc")
-	var arith Arith
-	arith.ctxTracker = &ctxTracker{}
-	s.Register(&arith)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	err := c.CallContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{})
+	err := c.CallContext(ctx, dest, "Arith", "Sleep", 5, &struct{}{})
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -315,27 +258,39 @@ func TestCallContextRemote(t *testing.T) {
 	}
 }
 
-func TestGoContext(t *testing.T) {
+func TestCallContext(t *testing.T) {
 	h1, h2 := makeRandomNodes()
 	defer h1.Close()
 	defer h2.Close()
-	s := NewServer(h1, "rpc")
-	c := NewClientWithServer(h2, "rpc", s)
-	var arith Arith
-	arith.ctxTracker = &ctxTracker{}
-	s.Register(&arith)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
-	defer cancel()
+	t.Run("local", func(t *testing.T) {
+		testCallContext(t, h1, h2, h2.ID())
+	})
 
-	done := make(chan *Call, 1)
-	err := c.GoContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{}, done)
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Run("remote", func(t *testing.T) {
+		testCallContext(t, h1, h2, h1.ID())
+	})
 
-	call := <-done
-	if call.Error == nil || !strings.Contains(call.Error.Error(), "context") {
-		t.Error("expected a context error:", err)
-	}
+	t.Run("async", func(t *testing.T) {
+		s := NewServer(h1, "rpc")
+		c := NewClientWithServer(h2, "rpc", s)
+
+		var arith Arith
+		arith.ctxTracker = &ctxTracker{}
+		s.Register(&arith)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
+		defer cancel()
+
+		done := make(chan *Call, 1)
+		err := c.GoContext(ctx, h1.ID(), "Arith", "Sleep", 5, &struct{}{}, done)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		call := <-done
+		if call.Error == nil || !strings.Contains(call.Error.Error(), "context") {
+			t.Error("expected a context error:", err)
+		}
+	})
 }
