@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 
 	host "github.com/libp2p/go-libp2p-host"
 	peer "github.com/libp2p/go-libp2p-peer"
@@ -53,14 +54,23 @@ func (c *Client) ID() peer.ID {
 // Call performs an RPC call to a registered Server service and blocks until
 // completed. If dest is empty ("") or matches the Client's host ID, it will
 // attempt to use the local configured Server when possible.
-func (c *Client) Call(dest peer.ID, svcName string, svcMethod string, args, reply interface{}) error {
+func (c *Client) Call(
+	dest peer.ID,
+	svcName, svcMethod string,
+	args, reply interface{},
+) error {
 	ctx := context.Background()
 	return c.CallContext(ctx, dest, svcName, svcMethod, args, reply)
 }
 
 // CallContext performs a Call() with a user provided context. This gives
 // the user the possibility of cancelling the operation at any point.
-func (c *Client) CallContext(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}) error {
+func (c *Client) CallContext(
+	ctx context.Context,
+	dest peer.ID,
+	svcName, svcMethod string,
+	args, reply interface{},
+) error {
 	done := make(chan *Call, 1)
 	call := newCall(ctx, dest, svcName, svcMethod, args, reply, done)
 	go c.makeCall(call)
@@ -76,17 +86,29 @@ func (c *Client) CallContext(ctx context.Context, dest peer.ID, svcName, svcMeth
 //
 // If dest is empty ("") or matches the Client's host ID, it will
 // attempt to use the local configured Server when possible.
-func (c *Client) Go(dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) error {
+func (c *Client) Go(
+	dest peer.ID,
+	svcName, svcMethod string,
+	args, reply interface{},
+	done chan *Call,
+) error {
 	ctx := context.Background()
 	return c.GoContext(ctx, dest, svcName, svcMethod, args, reply, done)
 }
 
 // GoContext performs a Go() call with the provided context, allowing
-// the user to cancel the operation. See Go() documentation for more information.
+// the user to cancel the operation. See Go() documentation for more
+// information.
 //
 // The provided done channel must be nil, or have capacity for 1 element
 // at least, or a panic will be triggered.
-func (c *Client) GoContext(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) error {
+func (c *Client) GoContext(
+	ctx context.Context,
+	dest peer.ID,
+	svcName, svcMethod string,
+	args, reply interface{},
+	done chan *Call,
+) error {
 	if done == nil {
 		done = make(chan *Call, 1)
 	} else {
@@ -97,6 +119,109 @@ func (c *Client) GoContext(ctx context.Context, dest peer.ID, svcName, svcMethod
 	call := newCall(ctx, dest, svcName, svcMethod, args, reply, done)
 	go c.makeCall(call)
 	return nil
+}
+
+// MultiCall performs a CallContext() to multiple destinations, using the same
+// service name, method and arguments. It will not return until all calls have
+// done so. The contexts, destinations and replies must match in length and
+// will be used in order (ctxs[i] is used for dests[i] which obtains
+// replies[i] and error[i]).
+//
+// The calls will be triggered in parallel (with one goroutine for each).
+func (c *Client) MultiCall(
+	ctxs []context.Context,
+	dests []peer.ID,
+	svcName, svcMethod string,
+	args interface{},
+	replies []interface{},
+) []error {
+
+	ok := checkMatchingLengths(
+		len(ctxs),
+		len(dests),
+		len(replies),
+	)
+
+	if !ok {
+		panic("ctxs, dests and replies must match in length")
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, len(dests), len(dests))
+
+	for i := range dests {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			err := c.CallContext(
+				ctxs[i],
+				dests[i],
+				svcName,
+				svcMethod,
+				args,
+				replies[i])
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+	return errs
+}
+
+// MultiGo performs a GoContext() call to multiple destinations, using the same
+// service name, method and arguments. MultiGo will return as right after
+// performing all the calls. See the Go() documentation for more information.
+//
+// The provided done channels must be nil, or have capacity for 1 element
+// at least, or a panic will be triggered.
+//
+// The contexts, destinations, replies and done channels  must match in length
+// and will be used in order (ctxs[i] is used for dests[i] which obtains
+// replies[i] with dones[i] signalled upon completion).
+func (c *Client) MultiGo(
+	ctxs []context.Context,
+	dests []peer.ID,
+	svcName, svcMethod string,
+	args interface{},
+	replies []interface{},
+	dones []chan *Call,
+) error {
+
+	ok := checkMatchingLengths(
+		len(ctxs),
+		len(dests),
+		len(replies),
+		len(dones),
+	)
+	if !ok {
+		panic("ctxs, dests, replies and dones must match in length")
+	}
+
+	for i := range ctxs {
+		c.GoContext(
+			ctxs[i],
+			dests[i],
+			svcName,
+			svcMethod,
+			args,
+			replies[i],
+			dones[i],
+		)
+	}
+
+	return nil
+}
+
+func checkMatchingLengths(l ...int) bool {
+	if len(l) <= 1 {
+		return true
+	}
+
+	for i := 1; i < len(l); i++ {
+		if l[i-1] != l[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // makeCall decides if a call can be performed. If it's a local

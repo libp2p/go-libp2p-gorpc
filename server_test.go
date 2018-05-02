@@ -294,3 +294,91 @@ func TestCallContext(t *testing.T) {
 		}
 	})
 }
+
+func TestMultiCall(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	s := NewServer(h1, "rpc")
+	c := NewClientWithServer(h2, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+
+	replies := make([]int, 2, 2)
+	ctxs := make([]context.Context, 2, 2)
+	repliesInt := make([]interface{}, 2, 2)
+	for i := range repliesInt {
+		repliesInt[i] = &replies[i]
+		ctxs[i] = context.Background()
+	}
+
+	errs := c.MultiCall(
+		ctxs,
+		[]peer.ID{h1.ID(), h2.ID()},
+		"Arith",
+		"Multiply",
+		&Args{2, 3},
+		repliesInt,
+	)
+
+	if len(errs) != 2 {
+		t.Fatal("expected two errs")
+	}
+
+	for _, err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	for _, reply := range replies {
+		if reply != 6 {
+			t.Error("expected 2*3=6")
+		}
+	}
+}
+
+func TestMultiGo(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	s := NewServer(h1, "rpc")
+	c := NewClientWithServer(h2, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+
+	replies := make([]int, 2, 2)
+	ctxs := make([]context.Context, 2, 2)
+	repliesInt := make([]interface{}, 2, 2)
+	dones := make([]chan *Call, 2, 2)
+	for i := range repliesInt {
+		repliesInt[i] = &replies[i]
+		ctxs[i] = context.Background()
+		dones[i] = make(chan *Call, 1)
+	}
+
+	err := c.MultiGo(
+		ctxs,
+		[]peer.ID{h1.ID(), h2.ID()},
+		"Arith",
+		"Multiply",
+		&Args{2, 3},
+		repliesInt,
+		dones,
+	)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	<-dones[0]
+	<-dones[1]
+
+	for _, reply := range replies {
+		if reply != 6 {
+			t.Error("expected 2*3=6")
+		}
+	}
+}
