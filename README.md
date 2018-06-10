@@ -32,6 +32,8 @@ make deps
 
 Documentation for this module is maintained in [Godoc](https://godoc.org/github.com/hsanjuan/go-libp2p-gorpc)
 
+There are also examples inside the [examples directory](./examples)
+
 ## Contribute
 
 PRs accepted.
