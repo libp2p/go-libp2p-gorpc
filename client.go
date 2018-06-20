@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"io"
 	"sync"
 
@@ -227,17 +226,21 @@ func checkMatchingLengths(l ...int) bool {
 // makeCall decides if a call can be performed. If it's a local
 // call it will use the configured server if set.
 func (c *Client) makeCall(call *Call) {
-	logger.Debugf("makeCall: %s.%s",
+	logger.Debugf(
+		"makeCall: %s.%s",
 		call.SvcID.Name,
-		call.SvcID.Method)
+		call.SvcID.Method,
+	)
 
 	// Handle local RPC calls
 	if call.Dest == "" || call.Dest == c.host.ID() {
-		logger.Debugf("local call: %s.%s",
-			call.SvcID.Name, call.SvcID.Method)
+		logger.Debugf(
+			"local call: %s.%s",
+			call.SvcID.Name,
+			call.SvcID.Method,
+		)
 		if c.server == nil {
-			err := errors.New(
-				"Cannot make local calls: server not set")
+			err := &ClientError{"Cannot make local calls: server not set"}
 			call.doneWithError(err)
 			return
 		}
@@ -263,7 +266,7 @@ func (c *Client) send(call *Call) {
 
 	s, err := c.host.NewStream(call.ctx, call.Dest, c.protocol)
 	if err != nil {
-		call.doneWithError(err)
+		call.doneWithError(NewClientError(err))
 		return
 	}
 	defer s.Close()
@@ -271,21 +274,25 @@ func (c *Client) send(call *Call) {
 
 	sWrap := wrapStream(s)
 
-	logger.Debugf("sending RPC %s.%s to %s", call.SvcID.Name,
-		call.SvcID.Method, call.Dest)
+	logger.Debugf(
+		"sending RPC %s.%s to %s",
+		call.SvcID.Name,
+		call.SvcID.Method,
+		call.Dest,
+	)
 	if err := sWrap.enc.Encode(call.SvcID); err != nil {
-		call.doneWithError(err)
+		call.doneWithError(NewClientError(err))
 		s.Reset()
 		return
 	}
 	if err := sWrap.enc.Encode(call.Args); err != nil {
-		call.doneWithError(err)
+		call.doneWithError(NewClientError(err))
 		s.Reset()
 		return
 	}
 
 	if err := sWrap.w.Flush(); err != nil {
-		call.doneWithError(err)
+		call.doneWithError(NewClientError(err))
 		s.Reset()
 		return
 	}
@@ -294,24 +301,28 @@ func (c *Client) send(call *Call) {
 
 // receiveResponse reads a response to an RPC call
 func receiveResponse(s *streamWrap, call *Call) {
-	logger.Debugf("waiting response for %s.%s to %s", call.SvcID.Name,
-		call.SvcID.Method, call.Dest)
+	logger.Debugf(
+		"waiting response for %s.%s to %s",
+		call.SvcID.Name,
+		call.SvcID.Method,
+		call.Dest,
+	)
 	var resp Response
 	if err := s.dec.Decode(&resp); err != nil {
-		call.doneWithError(err)
+		call.doneWithError(NewClientError(err))
 		s.stream.Reset()
 		return
 	}
 
 	defer call.done()
 	if e := resp.Error; e != "" {
-		call.setError(errors.New(e))
+		call.setError(ResponseError(resp.ErrType, e))
 	}
 
 	// Even on error we sent the reply so it needs to be
 	// read
 	if err := s.dec.Decode(call.Reply); err != nil && err != io.EOF {
-		call.setError(err)
+		call.setError(NewClientError(err))
 	}
 	return
 }

@@ -96,6 +96,7 @@ type ServiceID struct {
 type Response struct {
 	Service ServiceID
 	Error   string // error, if any.
+	ErrType ResponseErr
 }
 
 // Server is an LibP2P RPC server. It can register services which comply to the
@@ -128,7 +129,7 @@ func NewServer(h host.Host, p protocol.ID) *Server {
 			err := s.handle(sWrap)
 			if err != nil {
 				logger.Error("error handling RPC:", err)
-				resp := &Response{ServiceID{}, err.Error()}
+				resp := &Response{ServiceID{}, err.Error(), ResponseErrorType(err)}
 				sendResponse(sWrap, resp, nil)
 			}
 		})
@@ -152,14 +153,14 @@ func (server *Server) handle(s *streamWrap) error {
 
 	err := s.dec.Decode(&svcID)
 	if err != nil {
-		return err
+		return NewServerError(err)
 	}
 
 	logger.Debugf("RPC ServiceID is %s.%s", svcID.Name, svcID.Method)
 
 	service, mtype, err := server.getService(svcID)
 	if err != nil {
-		return err
+		return NewServerError(err)
 	}
 
 	// Decode the argument value.
@@ -172,7 +173,7 @@ func (server *Server) handle(s *streamWrap) error {
 	}
 	// argv guaranteed to be a pointer now.
 	if err = s.dec.Decode(argv.Interface()); err != nil {
-		return err
+		return NewServerError(err)
 	}
 	if argIsValue {
 		argv = argv.Elem()
@@ -216,7 +217,7 @@ func (s *service) svcCall(sWrap *streamWrap, mtype *methodType, svcID ServiceID,
 	if errInter != nil {
 		errmsg = errInter.(error).Error()
 	}
-	resp := &Response{svcID, errmsg}
+	resp := &Response{svcID, errmsg, NonRPCErr}
 
 	return sendResponse(sWrap, resp, replyv.Interface())
 }
@@ -245,7 +246,7 @@ func (server *Server) Call(call *Call) error {
 	var argv, replyv reflect.Value
 	service, mtype, err := server.getService(call.SvcID)
 	if err != nil {
-		return err
+		return NewServerError(err)
 	}
 
 	// Use the context value from the call directly
@@ -257,7 +258,9 @@ func (server *Server) Call(call *Call) error {
 		if reflect.TypeOf(call.Args).Kind() != reflect.Ptr {
 			return fmt.Errorf(
 				"%s.%s is being called with the wrong arg type",
-				call.SvcID.Name, call.SvcID.Method)
+				call.SvcID.Name,
+				call.SvcID.Method,
+			)
 		}
 		argv = reflect.New(mtype.ArgType.Elem())
 		argv.Elem().Set(reflect.ValueOf(call.Args).Elem())
@@ -265,7 +268,9 @@ func (server *Server) Call(call *Call) error {
 		if reflect.TypeOf(call.Args).Kind() == reflect.Ptr {
 			return fmt.Errorf(
 				"%s.%s is being called with the wrong arg type",
-				call.SvcID.Name, call.SvcID.Method)
+				call.SvcID.Name,
+				call.SvcID.Method,
+			)
 		}
 		argv = reflect.New(mtype.ArgType)
 		argv.Elem().Set(reflect.ValueOf(call.Args))
@@ -282,11 +287,14 @@ func (server *Server) Call(call *Call) error {
 	// Call service and respond
 	function := mtype.method.Func
 	// Invoke the method, providing a new value for the reply.
-	returnValues := function.Call([]reflect.Value{
-		service.rcvr,
-		ctxv,    // context
-		argv,    // argument
-		replyv}) // reply
+	returnValues := function.Call(
+		[]reflect.Value{
+			service.rcvr,
+			ctxv, // context
+			argv, // argument
+			replyv,
+		},
+	) // reply
 
 	creplyv := reflect.ValueOf(call.Reply)
 	creplyv.Elem().Set(replyv.Elem())
@@ -306,12 +314,12 @@ func (server *Server) getService(id ServiceID) (*service, *methodType, error) {
 	server.mu.RUnlock()
 	if service == nil {
 		err := errors.New("rpc: can't find service " + id.Name)
-		return nil, nil, err
+		return nil, nil, NewServerError(err)
 	}
 	mtype := service.method[id.Method]
 	if mtype == nil {
 		err := errors.New("rpc: can't find method " + id.Method)
-		return nil, nil, err
+		return nil, nil, NewServerError(err)
 	}
 	return service, mtype, nil
 }

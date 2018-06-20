@@ -26,7 +26,6 @@ type Call struct {
 
 	errorMu sync.Mutex
 	Error   error // After completion, the error status.
-
 }
 
 func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args interface{}, reply interface{}, done chan *Call) *Call {
