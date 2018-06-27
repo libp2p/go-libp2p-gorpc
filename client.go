@@ -312,6 +312,7 @@ func receiveResponse(s *streamWrap, call *Call) {
 	// read
 	if err := s.dec.Decode(call.Reply); err != nil && err != io.EOF {
 		call.setError(err)
+		s.stream.Reset()
 	}
 	return
 }
