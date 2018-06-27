@@ -96,7 +96,7 @@ type ServiceID struct {
 type Response struct {
 	Service ServiceID
 	Error   string // error, if any.
-	ErrType ResponseErr
+	ErrType responseErr
 }
 
 // Server is an LibP2P RPC server. It can register services which comply to the
@@ -129,7 +129,7 @@ func NewServer(h host.Host, p protocol.ID) *Server {
 			err := s.handle(sWrap)
 			if err != nil {
 				logger.Error("error handling RPC:", err)
-				resp := &Response{ServiceID{}, err.Error(), ResponseErrorType(err)}
+				resp := &Response{ServiceID{}, err.Error(), responseErrorType(err)}
 				sendResponse(sWrap, resp, nil)
 			}
 		})
@@ -153,14 +153,14 @@ func (server *Server) handle(s *streamWrap) error {
 
 	err := s.dec.Decode(&svcID)
 	if err != nil {
-		return NewServerError(err)
+		return newServerError(err)
 	}
 
 	logger.Debugf("RPC ServiceID is %s.%s", svcID.Name, svcID.Method)
 
 	service, mtype, err := server.getService(svcID)
 	if err != nil {
-		return NewServerError(err)
+		return newServerError(err)
 	}
 
 	// Decode the argument value.
@@ -173,7 +173,7 @@ func (server *Server) handle(s *streamWrap) error {
 	}
 	// argv guaranteed to be a pointer now.
 	if err = s.dec.Decode(argv.Interface()); err != nil {
-		return NewServerError(err)
+		return newServerError(err)
 	}
 	if argIsValue {
 		argv = argv.Elem()
@@ -217,7 +217,7 @@ func (s *service) svcCall(sWrap *streamWrap, mtype *methodType, svcID ServiceID,
 	if errInter != nil {
 		errmsg = errInter.(error).Error()
 	}
-	resp := &Response{svcID, errmsg, NonRPCErr}
+	resp := &Response{svcID, errmsg, nonRPCErr}
 
 	return sendResponse(sWrap, resp, replyv.Interface())
 }
@@ -246,7 +246,7 @@ func (server *Server) Call(call *Call) error {
 	var argv, replyv reflect.Value
 	service, mtype, err := server.getService(call.SvcID)
 	if err != nil {
-		return NewServerError(err)
+		return newServerError(err)
 	}
 
 	// Use the context value from the call directly
@@ -314,12 +314,12 @@ func (server *Server) getService(id ServiceID) (*service, *methodType, error) {
 	server.mu.RUnlock()
 	if service == nil {
 		err := errors.New("rpc: can't find service " + id.Name)
-		return nil, nil, NewServerError(err)
+		return nil, nil, newServerError(err)
 	}
 	mtype := service.method[id.Method]
 	if mtype == nil {
 		err := errors.New("rpc: can't find method " + id.Method)
-		return nil, nil, NewServerError(err)
+		return nil, nil, newServerError(err)
 	}
 	return service, mtype, nil
 }

@@ -2,83 +2,93 @@ package rpc
 
 import "errors"
 
-// ResponseErr is an enum type for providing error type
+// responseErr is an enum type for providing error type
 // information over the wire between rpc server and client.
-type ResponseErr int
+type responseErr int
 
 const (
-	// NonRPCErr is an error that hasn't arisen from the gorpc package.
-	NonRPCErr ResponseErr = iota
-	// ServerErr is an error that has arisen on the server side.
-	ServerErr
-	// ClientErr is an error that has arisen on the client side.
-	ClientErr
+	// nonRPCErr is an error that hasn't arisen from the gorpc package.
+	nonRPCErr responseErr = iota
+	// serverErr is an error that has arisen on the server side.
+	serverErr
+	// clientErr is an error that has arisen on the client side.
+	clientErr
 )
 
-// ServerError indicates that error originated in server
+// serverError indicates that error originated in server
 // specific code.
-type ServerError struct {
+type serverError struct {
 	msg string
 }
 
-func (s *ServerError) Error() string {
+func (s *serverError) Error() string {
 	return s.msg
 }
 
-// NewServerError wraps an error in the ServerError type.
-func NewServerError(err error) error {
-	return &ServerError{err.Error()}
+// newServerError wraps an error in the serverError type.
+func newServerError(err error) error {
+	return &serverError{err.Error()}
 }
 
-// ClientError indicates that error originated in client
+// clientError indicates that error originated in client
 // specific code.
-type ClientError struct {
+type clientError struct {
 	msg string
 }
 
-func (c *ClientError) Error() string {
+func (c *clientError) Error() string {
 	return c.msg
 }
 
-// NewClientError wraps an error in the ClientError type.
-func NewClientError(err error) error {
-	return &ClientError{err.Error()}
+// newClientError wraps an error in the clientError type.
+func newClientError(err error) error {
+	return &clientError{err.Error()}
 }
 
-// ResponseError converts an ResponseErr and error message string
+// responseError converts an responseErr and error message string
 // into the appropriate error type.
-func ResponseError(errType ResponseErr, errMsg string) error {
+func responseError(errType responseErr, errMsg string) error {
 	switch errType {
-	case ServerErr:
-		return &ServerError{errMsg}
-	case ClientErr:
-		return &ClientError{errMsg}
+	case serverErr:
+		return &serverError{errMsg}
+	case clientErr:
+		return &clientError{errMsg}
 	default:
 		return errors.New(errMsg)
 	}
 }
 
-// ResponseErrorType determines whether an error is of either
-// ServerError or ClientError type and returns the appropriate
-// ResponseErr value.
-func ResponseErrorType(err error) ResponseErr {
+// responseErrorType determines whether an error is of either
+// serverError or clientError type and returns the appropriate
+// responseErr value.
+func responseErrorType(err error) responseErr {
 	switch err.(type) {
-	case *ServerError:
-		return ServerErr
-	case *ClientError:
-		return ClientErr
+	case *serverError:
+		return serverErr
+	case *clientError:
+		return clientErr
 	default:
-		return NonRPCErr
+		return nonRPCErr
 	}
 }
 
-// IsRPCError returns whether an error is either a ServerError
-// or ClientError.
+// IsRPCError returns whether an error is either a serverError
+// or clientError.
 func IsRPCError(err error) bool {
 	switch err.(type) {
-	case *ServerError, *ClientError:
+	case *serverError, *clientError:
 		return true
 	default:
 		return false
 	}
+}
+
+// IsServerError returns whether an error is serverError.
+func IsServerError(err error) bool {
+	return responseErrorType(err) == serverErr
+}
+
+// IsClientError returns whether an error is clientError.
+func IsClientError(err error) bool {
+	return responseErrorType(err) == clientErr
 }

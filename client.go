@@ -240,7 +240,7 @@ func (c *Client) makeCall(call *Call) {
 			call.SvcID.Method,
 		)
 		if c.server == nil {
-			err := &ClientError{"Cannot make local calls: server not set"}
+			err := &clientError{"Cannot make local calls: server not set"}
 			call.doneWithError(err)
 			return
 		}
@@ -266,7 +266,7 @@ func (c *Client) send(call *Call) {
 
 	s, err := c.host.NewStream(call.ctx, call.Dest, c.protocol)
 	if err != nil {
-		call.doneWithError(NewClientError(err))
+		call.doneWithError(newClientError(err))
 		return
 	}
 	defer s.Close()
@@ -281,18 +281,18 @@ func (c *Client) send(call *Call) {
 		call.Dest,
 	)
 	if err := sWrap.enc.Encode(call.SvcID); err != nil {
-		call.doneWithError(NewClientError(err))
+		call.doneWithError(newClientError(err))
 		s.Reset()
 		return
 	}
 	if err := sWrap.enc.Encode(call.Args); err != nil {
-		call.doneWithError(NewClientError(err))
+		call.doneWithError(newClientError(err))
 		s.Reset()
 		return
 	}
 
 	if err := sWrap.w.Flush(); err != nil {
-		call.doneWithError(NewClientError(err))
+		call.doneWithError(newClientError(err))
 		s.Reset()
 		return
 	}
@@ -309,20 +309,20 @@ func receiveResponse(s *streamWrap, call *Call) {
 	)
 	var resp Response
 	if err := s.dec.Decode(&resp); err != nil {
-		call.doneWithError(NewClientError(err))
+		call.doneWithError(newClientError(err))
 		s.stream.Reset()
 		return
 	}
 
 	defer call.done()
 	if e := resp.Error; e != "" {
-		call.setError(ResponseError(resp.ErrType, e))
+		call.setError(responseError(resp.ErrType, e))
 	}
 
 	// Even on error we sent the reply so it needs to be
 	// read
 	if err := s.dec.Decode(call.Reply); err != nil && err != io.EOF {
-		call.setError(NewClientError(err))
+		call.setError(newClientError(err))
 	}
 	return
 }
