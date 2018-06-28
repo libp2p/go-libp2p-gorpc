@@ -224,14 +224,17 @@ func (s *service) svcCall(sWrap *streamWrap, mtype *methodType, svcID ServiceID,
 func sendResponse(s *streamWrap, resp *Response, body interface{}) error {
 	if err := s.enc.Encode(resp); err != nil {
 		logger.Error("error encoding response:", err)
+		s.stream.Reset()
 		return err
 	}
 	if err := s.enc.Encode(body); err != nil {
 		logger.Error("error encoding body:", err)
+		s.stream.Reset()
 		return err
 	}
 	if err := s.w.Flush(); err != nil {
 		logger.Debug("error flushing response:", err)
+		s.stream.Reset()
 		return err
 	}
 	return nil
