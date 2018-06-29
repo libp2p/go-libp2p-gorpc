@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	host "github.com/libp2p/go-libp2p-host"
+	inet "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
 )
@@ -266,9 +267,8 @@ func (c *Client) send(call *Call) {
 		call.doneWithError(err)
 		return
 	}
-	defer s.Close()
-	go call.watchContextWithStream(s)
 
+	go call.watchContextWithStream(s)
 	sWrap := wrapStream(s)
 
 	logger.Debugf("sending RPC %s.%s to %s", call.SvcID.Name,
@@ -289,18 +289,22 @@ func (c *Client) send(call *Call) {
 		s.Reset()
 		return
 	}
-	receiveResponse(sWrap, call)
+	err = receiveResponse(sWrap, call)
+	if err != nil {
+		s.Reset()
+		return
+	}
+	go inet.FullClose(s)
 }
 
 // receiveResponse reads a response to an RPC call
-func receiveResponse(s *streamWrap, call *Call) {
+func receiveResponse(s *streamWrap, call *Call) error {
 	logger.Debugf("waiting response for %s.%s to %s", call.SvcID.Name,
 		call.SvcID.Method, call.Dest)
 	var resp Response
 	if err := s.dec.Decode(&resp); err != nil {
 		call.doneWithError(err)
-		s.stream.Reset()
-		return
+		return err
 	}
 
 	defer call.done()
@@ -312,7 +316,7 @@ func receiveResponse(s *streamWrap, call *Call) {
 	// read
 	if err := s.dec.Decode(call.Reply); err != nil && err != io.EOF {
 		call.setError(err)
-		s.stream.Reset()
+		return err
 	}
-	return
+	return nil
 }

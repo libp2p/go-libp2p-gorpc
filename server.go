@@ -124,7 +124,7 @@ func NewServer(h host.Host, p protocol.ID) *Server {
 	if h != nil {
 		h.SetStreamHandler(p, func(stream inet.Stream) {
 			sWrap := wrapStream(stream)
-			defer stream.Close()
+			defer inet.FullClose(stream)
 			err := s.handle(sWrap)
 			if err != nil {
 				logger.Error("error handling RPC:", err)
@@ -132,7 +132,6 @@ func NewServer(h host.Host, p protocol.ID) *Server {
 				sendResponse(sWrap, resp, nil)
 			}
 		})
-
 	}
 	return s
 }
