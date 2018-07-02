@@ -9,9 +9,9 @@
   "gxDependencies": [
     {
       "author": "whyrusleeping",
-      "hash": "QmY6iAoG9DVgZwh5ZRcQEpa2uErAe1Hbei8qXPCjpDS9Ge",
+      "hash": "QmZ86eLPtXkQ1Dfa992Q8NpXArUoWWh3y728JDcWvzRrvC",
       "name": "go-libp2p",
-      "version": "5.0.21"
+      "version": "6.0.5"
     },
     {
       "author": "multiformats",
@@ -25,6 +25,6 @@
   "license": "MIT/BSD",
   "name": "go-libp2p-gorpc",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.10"
+  "version": "1.0.13"
 }
 

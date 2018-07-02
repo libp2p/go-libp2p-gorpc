@@ -82,7 +82,7 @@ func (call *Call) watchContextWithStream(s inet.Stream) {
 			// Close() instead of Reset(). This lets the other
 			// write to the stream without printing errors to
 			// the console (graceful fail).
-			s.Close()
+			inet.FullClose(s)
 			call.doneWithError(call.ctx.Err())
 		}
 	}

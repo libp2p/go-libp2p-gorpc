@@ -9,13 +9,10 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log"
-	crypto "github.com/libp2p/go-libp2p-crypto"
+	libp2p "github.com/libp2p/go-libp2p"
 	host "github.com/libp2p/go-libp2p-host"
 	peer "github.com/libp2p/go-libp2p-peer"
 	peerstore "github.com/libp2p/go-libp2p-peerstore"
-	swarm "github.com/libp2p/go-libp2p-swarm"
-	basic "github.com/libp2p/go-libp2p/p2p/host/basic"
-	multiaddr "github.com/multiformats/go-multiaddr"
 )
 
 func init() {
@@ -89,45 +86,18 @@ func (t *Arith) Sleep(ctx context.Context, secs int, res *struct{}) error {
 }
 
 func makeRandomNodes() (h1, h2 host.Host) {
-	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	pid1, _ := peer.IDFromPublicKey(pub1)
-	maddr1, _ := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/19998")
+	h1, _ = libp2p.New(
+		context.Background(),
+		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/19998"),
+	)
+	h2, _ = libp2p.New(
+		context.Background(),
+		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/19999"),
+	)
 
-	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	pid2, _ := peer.IDFromPublicKey(pub2)
-	maddr2, _ := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/19999")
+	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), peerstore.PermanentAddrTTL)
+	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), peerstore.PermanentAddrTTL)
 
-	ps1 := peerstore.NewPeerstore()
-	ps2 := peerstore.NewPeerstore()
-	ps1.AddPubKey(pid1, pub1)
-	ps1.AddPrivKey(pid1, priv1)
-	ps1.AddPubKey(pid2, pub2)
-	ps1.AddPrivKey(pid2, priv2)
-	ps1.AddAddrs(pid2, []multiaddr.Multiaddr{maddr2}, peerstore.PermanentAddrTTL)
-
-	ps2.AddPubKey(pid1, pub1)
-	ps2.AddPrivKey(pid1, priv1)
-	ps2.AddPubKey(pid2, pub2)
-	ps2.AddPrivKey(pid2, priv2)
-	ps2.AddAddrs(pid1, []multiaddr.Multiaddr{maddr1}, peerstore.PermanentAddrTTL)
-
-	ctx := context.Background()
-	n1, _ := swarm.NewNetwork(
-		ctx,
-		[]multiaddr.Multiaddr{maddr1},
-		pid1,
-		ps1,
-		nil)
-	n2, _ := swarm.NewNetwork(
-		ctx,
-		[]multiaddr.Multiaddr{maddr2},
-		pid2,
-		ps2,
-		nil)
-
-	h1 = basic.New(n1)
-	h2 = basic.New(n2)
-	time.Sleep(time.Second)
 	return
 }
 
