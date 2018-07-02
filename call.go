@@ -79,10 +79,11 @@ func (call *Call) watchContextWithStream(s inet.Stream) {
 	case <-call.ctx.Done():
 		if !call.isFinished() { // context was cancelled not by us
 			logger.Debug("call context is done before finishing")
-			// Close() instead of Reset(). This lets the other
+			// FullClose() instead of Reset(). This lets the other
 			// write to the stream without printing errors to
-			// the console (graceful fail).
-			inet.FullClose(s)
+			// the console (graceful fail) and eventually will
+			// reset.
+			go inet.FullClose(s)
 			call.doneWithError(call.ctx.Err())
 		}
 	}

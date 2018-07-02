@@ -307,14 +307,14 @@ func (c *Client) send(call *Call) {
 // receiveResponse reads a response to an RPC call
 func receiveResponse(s *streamWrap, call *Call) error {
 	logger.Debugf(
-    "waiting response for %s.%s to %s",
-    call.SvcID.Name,
+		"waiting response for %s.%s to %s",
+		call.SvcID.Name,
 		call.SvcID.Method,
-    call.Dest,
-  )
+		call.Dest,
+	)
 	var resp Response
 	if err := s.dec.Decode(&resp); err != nil {
-    call.doneWithError(newClientError(err))
+		call.doneWithError(newClientError(err))
 		return err
 	}
 
@@ -326,7 +326,7 @@ func receiveResponse(s *streamWrap, call *Call) error {
 	// Even on error we sent the reply so it needs to be
 	// read
 	if err := s.dec.Decode(call.Reply); err != nil && err != io.EOF {
-    call.setError(newClientError(err))
+		call.setError(newClientError(err))
 		return err
 	}
 	return nil
