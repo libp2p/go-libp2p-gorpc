@@ -180,26 +180,87 @@ func TestErrorResponse(t *testing.T) {
 	var arith Arith
 	s.Register(&arith)
 
-	var r int
-	// test remote
-	c := NewClientWithServer(h2, "rpc", s)
-	err := c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &r)
-	if err == nil || err.Error() != "an error" {
-		t.Error("expected different error")
-	}
-	if r != 42 {
-		t.Error("response should be set even on error")
-	}
+	t.Run("remote", func(t *testing.T) {
+		var r int
+		c := NewClientWithServer(h2, "rpc", s)
+		err := c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &r)
+		if err == nil || err.Error() != "an error" {
+			t.Error("expected different error")
+		}
+		if r != 42 {
+			t.Error("response should be set even on error")
+		}
+	})
 
-	// test local
-	c = NewClientWithServer(h1, "rpc", s)
-	err = c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &r)
-	if err == nil || err.Error() != "an error" {
-		t.Error("expected different error")
-	}
-	if r != 42 {
-		t.Error("response should be set even on error")
-	}
+	t.Run("local", func(t *testing.T) {
+		var r int
+		c := NewClientWithServer(h1, "rpc", s)
+		err := c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &r)
+		if err == nil || err.Error() != "an error" {
+			t.Error("expected different error")
+		}
+		if r != 42 {
+			t.Error("response should be set even on error")
+		}
+	})
+}
+
+func TestNonRPCError(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	s := NewServer(h1, "rpc")
+	var arith Arith
+	s.Register(&arith)
+
+	t.Run("local non rpc error", func(t *testing.T) {
+		var r int
+		c := NewClientWithServer(h1, "rpc", s)
+		err := c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &r)
+		if err != nil {
+			if IsRPCError(err) {
+				t.Log(err)
+				t.Error("expected non rpc error")
+			}
+		}
+	})
+
+	t.Run("local rpc error", func(t *testing.T) {
+		var r int
+		c := NewClientWithServer(h1, "rpc", s)
+		err := c.Call(h1.ID(), "Arith", "ThisIsNotAMethod", &Args{1, 2}, &r)
+		if err != nil {
+			if !IsRPCError(err) {
+				t.Log(err)
+				t.Error("expected rpc error")
+			}
+		}
+	})
+
+	t.Run("remote non rpc error", func(t *testing.T) {
+		var r int
+		c := NewClientWithServer(h2, "rpc", s)
+		err := c.Call(h1.ID(), "Arith", "GimmeError", &Args{1, 2}, &r)
+		if err != nil {
+			if IsRPCError(err) {
+				t.Log(err)
+				t.Error("expected non rpc error")
+			}
+		}
+	})
+
+	t.Run("remote rpc error", func(t *testing.T) {
+		var r int
+		c := NewClientWithServer(h2, "rpc", s)
+		err := c.Call(h1.ID(), "Arith", "ThisIsNotAMethod", &Args{1, 2}, &r)
+		if err != nil {
+			if !IsRPCError(err) {
+				t.Log(err)
+				t.Error("expected rpc error")
+			}
+		}
+	})
 }
 
 func testCallContext(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
