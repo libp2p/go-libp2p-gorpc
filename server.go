@@ -53,6 +53,7 @@ import (
 	"log"
 	"reflect"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -61,6 +62,9 @@ import (
 	inet "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
+
+	"go.opencensus.io/stats"
+	"go.opencensus.io/tag"
 )
 
 var logger = logging.Logger("p2p-gorpc")
@@ -208,6 +212,25 @@ func (server *Server) handle(s *streamWrap) error {
 func (s *service) svcCall(sWrap *streamWrap, mtype *methodType, svcID ServiceID, ctxv, argv, replyv reflect.Value) error {
 	function := mtype.method.Func
 
+	startT := time.Now()
+	var cctx context.Context
+	var ok bool
+	cctx, ok = ctxv.Interface().(context.Context)
+	if !ok {
+		cctx = context.Background()
+	}
+
+	cctx, err := tag.New(
+		cctx,
+		tag.Upsert(ServiceKey, svcID.Name),
+		tag.Upsert(MethodKey, svcID.Method),
+	)
+	if err != nil {
+		return err
+	}
+
+	stats.Record(cctx, RequestCountMetric.M(1))
+
 	// Invoke the method, providing a new value for the reply.
 	returnValues := function.Call([]reflect.Value{s.rcvr, ctxv, argv, replyv})
 	// The return value for the method is an error.
@@ -216,6 +239,8 @@ func (s *service) svcCall(sWrap *streamWrap, mtype *methodType, svcID ServiceID,
 	if errInter != nil {
 		errmsg = errInter.(error).Error()
 	}
+
+	stats.Record(cctx, RequestLatencyMetric.M(float64(time.Since(startT))/float64(time.Millisecond))) // TODO(ajl): latency doesn't include response part atm
 	resp := &Response{svcID, errmsg, nonRPCErr}
 
 	return sendResponse(sWrap, resp, replyv.Interface())
@@ -253,6 +278,11 @@ func (server *Server) Call(call *Call) error {
 
 	// Use the context value from the call directly
 	ctxv := reflect.ValueOf(call.ctx)
+	ctx, err := tag.New(
+		call.ctx,
+		tag.Upsert(ServiceKey, call.SvcID.Name),
+		tag.Upsert(MethodKey, call.SvcID.Method),
+	)
 
 	// Decode the argument value.
 	argIsValue := false // if true, need to indirect before calling.
@@ -288,6 +318,10 @@ func (server *Server) Call(call *Call) error {
 
 	// Call service and respond
 	function := mtype.method.Func
+
+	startT := time.Now()
+	stats.Record(ctx, RequestCountMetric.M(1))
+
 	// Invoke the method, providing a new value for the reply.
 	returnValues := function.Call(
 		[]reflect.Value{
@@ -306,6 +340,7 @@ func (server *Server) Call(call *Call) error {
 	if errInter != nil {
 		return errInter.(error)
 	}
+	stats.Record(ctx, RequestLatencyMetric.M(float64(time.Since(startT))/float64(time.Millisecond))) // TODO(ajl): latency doesn't include response part atm
 	return nil
 }
 
