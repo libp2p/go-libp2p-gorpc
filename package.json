@@ -15,9 +15,9 @@
     },
     {
       "author": "multiformats",
-      "hash": "QmRDePEiL4Yupq5EkcK3L3ko3iMgYaqUdLu7xc1kqs7dnV",
+      "hash": "QmewJ1Zp9Hwz5HcMd7JYjhLXwvEHTL2UBCCz3oLt1E2N5z",
       "name": "go-multicodec",
-      "version": "0.1.5"
+      "version": "0.1.6"
     }
   ],
   "gxVersion": "0.10.0",
@@ -25,6 +25,6 @@
   "license": "MIT/BSD",
   "name": "go-libp2p-gorpc",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.15"
+  "version": "1.0.16"
 }
 
