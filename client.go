@@ -234,7 +234,7 @@ func (c *Client) makeCall(call *Call) {
 	)
 
 	// Handle local RPC calls
-	if call.Dest == "" || call.Dest == c.host.ID() {
+	if call.Dest == "" || c.host == nil || call.Dest == c.host.ID() {
 		logger.Debugf(
 			"local call: %s.%s",
 			call.SvcID.Name,
