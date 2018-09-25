@@ -63,8 +63,8 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
 
-	"go.opencensus.io/stats"
-	"go.opencensus.io/tag"
+	"github.com/gxed/opencensus-go/stats"
+	"github.com/gxed/opencensus-go/tag"
 )
 
 var logger = logging.Logger("p2p-gorpc")

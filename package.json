@@ -18,6 +18,12 @@
       "hash": "QmewJ1Zp9Hwz5HcMd7JYjhLXwvEHTL2UBCCz3oLt1E2N5z",
       "name": "go-multicodec",
       "version": "0.1.6"
+    },
+    {
+      "author": "lanzafame",
+      "hash": "QmTN5ZSRrAPrVNa4qWU1X7fC8xSzx49YYQGPrV9pkdNpn3",
+      "name": "opencensus-go",
+      "version": "0.0.1"
     }
   ],
   "gxVersion": "0.10.0",

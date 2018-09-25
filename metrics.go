@@ -1,9 +1,9 @@
 package rpc
 
 import (
-	"go.opencensus.io/stats"
-	"go.opencensus.io/stats/view"
-	"go.opencensus.io/tag"
+	"github.com/gxed/opencensus-go/stats"
+	"github.com/gxed/opencensus-go/stats/view"
+	"github.com/gxed/opencensus-go/tag"
 )
 
 var (
