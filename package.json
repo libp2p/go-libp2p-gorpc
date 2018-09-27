@@ -21,9 +21,9 @@
     },
     {
       "author": "lanzafame",
-      "hash": "QmXrnFEnNJqescqF3RhsH7BaSU6jMBUZDehNYZY4bUgJCm",
+      "hash": "Qmb2UZ3Kq3AFy5gAL5vkHjYAkvzsbnXAEZomcWp49eV9hj",
       "name": "opencensus-go",
-      "version": "0.0.2"
+      "version": "0.0.3"
     }
   ],
   "gxVersion": "0.10.0",
@@ -31,6 +31,6 @@
   "license": "MIT/BSD",
   "name": "go-libp2p-gorpc",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.19"
+  "version": "1.0.20"
 }
 
