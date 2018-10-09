@@ -26,7 +26,7 @@ type PingReply struct {
 }
 type PingService struct{}
 
-func (t *PingService) Ping(argType PingArgs, replyType *PingReply) error {
+func (t *PingService) Ping(ctx context.Context, argType PingArgs, replyType *PingReply) error {
 	log.Println("Received a Ping call")
 	replyType.Data = argType.Data
 	return nil
