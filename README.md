@@ -6,7 +6,7 @@
 [![standard-readme compliant](https://img.shields.io/badge/standard--readme-OK-green.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 [![GoDoc](https://godoc.org/github.com/hsanjuan/go-libp2p-gorpc?status.svg)](https://godoc.org/github.com/hsanjuan/go-libp2p-gorpc)
 [![Build Status](https://travis-ci.org/hsanjuan/go-libp2p-gorpc.svg?branch=master)](https://travis-ci.org/hsanjuan/go-libp2p-gorpc)
-[![Coverage Status](https://coveralls.io/repos/github/hsanjuan/go-libp2p-gorpc/badge.svg?branch=master)](https://coveralls.io/github/hsanjuan/go-libp2p-gorpc?branch=master)
+[![Codecov](https://codecov.io/gh/libp2p/go-libp2p-gorpc/badge.svg)](https://codecov.io/gh/libp2p/go-libp2p-gorpc)
 
 > Simple Go RPC for LibP2P.
 

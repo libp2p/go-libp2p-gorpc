@@ -1,17 +1,15 @@
 language: go
 go:
-- 1.10.x
+- 1.11.x
 install:
 - go get golang.org/x/tools/cmd/cover
 - go get github.com/mattn/goveralls
 - make deps
 script:
 - make test
-- "$GOPATH/bin/goveralls -coverprofile=coverage.out -service=travis-ci -repotoken
-  $COVERALLS_TOKEN"
-env:
-  global:
-    secure: pRCQpRRO5wvZnQXaVVzeTUoZ8b02H8/KlOQgBnEN0Qt+NpWuO9C7K+3/lESO83wJW8IcZRfASHsndH0RX0DeihsCPTwuXr+cak/QI8RthlAxnCJhzN4/NcdFMenCwLTCyGVptiRgdhbGkDx8o/pqDV6sg8JNs7a4s2gbE68fwsAK4d7AuHZjLwwBaceJ+SKS1UCrcfUH1CA5VUoAXMV73bdisd4IPBRUGO729F+gsXt3EJeM5URpHxvh9sYEx4UxtlLxuV+BNmbvyEpOJlZCnHfz1BWyOZx4iXB44GowFPm+WzRarszetIiSLnXMiROyWN7M6vK+lQYVKXplwNk4O/qQoQBzCrSXNF+YiZGvn5fg5FO0hCFdL1epG/dEUUo/zoUfhf/MhmPQpdbkMWk6Df/+nltFFVPKb234C2GxZagBCwYjgf/574yjsnsO7Op+47AjfyyVw0Vu4AiXm3AUGF0Gpen2unr2oe+RIXaV2yqwrFXIw6AMAIN+VFG7zg/yUVPFlMWB2OVQi4rmH30of0JHKwe4n33eknKhr5iSPoUSuWMcVu7NjHGwj7NPvpKIfSPSHug4TZ3q9vdWrepMUKmzy/kKQMG9GbqmyjxXAMsG/joNnItwP0uwypO2Od8NQkpmvEBAR4xA55yM7JvaeHBnZ8OprmQLR/1jzrj9dV0=
+
+after_success:
+- bash <(curl -s https://codecov.io/bash)
 
 cache:
   directories:
