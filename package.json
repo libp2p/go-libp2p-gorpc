@@ -1,10 +1,10 @@
 {
   "author": "hsanjuan",
   "bugs": {
-    "url": "https://github.com/hsanjuan/go-libp2p-gorpc"
+    "url": "https://github.com/libp2p/go-libp2p-gorpc"
   },
   "gx": {
-    "dvcsimport": "github.com/hsanjuan/go-libp2p-gorpc"
+    "dvcsimport": "github.com/libp2p/go-libp2p-gorpc"
   },
   "gxDependencies": [
     {
@@ -25,6 +25,6 @@
   "license": "MIT/BSD",
   "name": "go-libp2p-gorpc",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.20"
+  "version": "1.0.21"
 }
 
