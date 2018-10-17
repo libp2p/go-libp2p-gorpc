@@ -10,8 +10,8 @@ import (
 
 	"log"
 
-	gorpc "github.com/hsanjuan/go-libp2p-gorpc"
 	libp2p "github.com/libp2p/go-libp2p"
+	gorpc "github.com/libp2p/go-libp2p-gorpc"
 	host "github.com/libp2p/go-libp2p-host"
 	peerstore "github.com/libp2p/go-libp2p-peerstore"
 	protocol "github.com/libp2p/go-libp2p-protocol"
