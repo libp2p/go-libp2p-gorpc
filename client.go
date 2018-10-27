@@ -75,7 +75,7 @@ func (c *Client) CallContext(
 	call := newCall(ctx, dest, svcName, svcMethod, args, reply, done)
 	go c.makeCall(call)
 	<-done
-	return call.Error
+	return call.getError()
 }
 
 // Go performs an RPC call asynchronously. The associated Call will be placed

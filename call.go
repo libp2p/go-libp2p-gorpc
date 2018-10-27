@@ -96,3 +96,9 @@ func (call *Call) setError(err error) {
 		call.Error = err
 	}
 }
+
+func (call *Call) getError() error {
+	call.errorMu.Lock()
+	defer call.errorMu.Unlock()
+	return call.Error
+}
