@@ -50,13 +50,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"reflect"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	logging "github.com/ipfs/go-log"
+	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 	host "github.com/libp2p/go-libp2p-host"
 	inet "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
@@ -99,6 +102,17 @@ type Response struct {
 	ErrType responseErr
 }
 
+// ServerOption allows for functional setting of options on a Server.
+type ServerOption func(*Server)
+
+// WithServerStatsHandler providers a implementation of stats.Handler to be
+// used by the Server.
+func WithServerStatsHandler(h stats.Handler) ServerOption {
+	return func(s *Server) {
+		s.statsHandler = h
+	}
+}
+
 // Server is an LibP2P RPC server. It can register services which comply to the
 // limitations outlined in the package description and it will call the relevant
 // methods when receiving requests from a Client.
@@ -107,8 +121,9 @@ type Response struct {
 // by the client. The LibP2P host must be already correctly configured to
 // be able to handle connections from clients.
 type Server struct {
-	host     host.Host
-	protocol protocol.ID
+	host         host.Host
+	protocol     protocol.ID
+	statsHandler stats.Handler
 
 	mu         sync.RWMutex // protects the serviceMap
 	serviceMap map[string]*service
@@ -116,10 +131,14 @@ type Server struct {
 
 // NewServer creates a Server object with the given LibP2P host
 // and protocol.
-func NewServer(h host.Host, p protocol.ID) *Server {
+func NewServer(h host.Host, p protocol.ID, opts ...ServerOption) *Server {
 	s := &Server{
 		host:     h,
 		protocol: p,
+	}
+
+	for _, opt := range opts {
+		opt(s)
 	}
 
 	if h != nil {
@@ -147,12 +166,35 @@ func (server *Server) ID() peer.ID {
 
 func (server *Server) handle(s *streamWrap) error {
 	logger.Debugf("%s: handling remote RPC", server.host.ID().Pretty())
+	var err error
 	var svcID ServiceID
 	var argv, replyv reflect.Value
+	ctx := context.Background()
 
-	err := s.dec.Decode(&svcID)
+	err = s.dec.Decode(&svcID)
 	if err != nil {
 		return newServerError(err)
+	}
+
+	sh := server.statsHandler
+	if sh != nil {
+		ctx = sh.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/" + svcID.Name + "/" + svcID.Method})
+		beginTime := time.Now()
+		begin := &stats.Begin{
+			BeginTime: beginTime,
+		}
+		sh.HandleRPC(ctx, begin)
+
+		defer func() {
+			end := &stats.End{
+				BeginTime: beginTime,
+				EndTime:   time.Now(),
+			}
+			if err != nil && err != io.EOF {
+				end.Error = newServerError(err)
+			}
+			sh.HandleRPC(ctx, end)
+		}()
 	}
 
 	logger.Debugf("RPC ServiceID is %s.%s", svcID.Name, svcID.Method)
@@ -180,10 +222,18 @@ func (server *Server) handle(s *streamWrap) error {
 
 	replyv = reflect.New(mtype.ReplyType.Elem())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	ctxv := reflect.ValueOf(ctx)
+
+	// TODO(lanzafame): once I figure out a
+	// good to get the size of the payload.
+	// inPayload := &stats.InPayload{
+	// 	Length:   ,
+	// 	RecvTime: beginTime,
+	// }
+	// sh.HandleRPC(ctx, inPayload)
 
 	// This is a connection watchdog. We do not
 	// need to read from this stream anymore.
@@ -245,6 +295,35 @@ func sendResponse(s *streamWrap, resp *Response, body interface{}) error {
 // create streams between a server and a client which share the same
 // host. See NewClientWithServer() for more info.
 func (server *Server) Call(call *Call) error {
+	var err error
+
+	sh := server.statsHandler
+	if sh != nil {
+		call.ctx = sh.TagRPC(call.ctx, &stats.RPCTagInfo{FullMethodName: "/" + call.SvcID.Name + "/" + call.SvcID.Method})
+		beginTime := time.Now()
+		begin := &stats.Begin{
+			BeginTime: beginTime,
+		}
+		sh.HandleRPC(call.ctx, begin)
+
+		inPayload := &stats.InPayload{
+			Payload:  call,
+			Length:   int(reflect.TypeOf(call.Args).Size()),
+			RecvTime: beginTime,
+		}
+		sh.HandleRPC(call.ctx, inPayload)
+		defer func() {
+			end := &stats.End{
+				BeginTime: beginTime,
+				EndTime:   time.Now(),
+			}
+			if err != nil && err != io.EOF {
+				end.Error = newServerError(err)
+			}
+			sh.HandleRPC(call.ctx, end)
+		}()
+	}
+
 	var argv, replyv reflect.Value
 	service, mtype, err := server.getService(call.SvcID)
 	if err != nil {
@@ -288,6 +367,7 @@ func (server *Server) Call(call *Call) error {
 
 	// Call service and respond
 	function := mtype.method.Func
+
 	// Invoke the method, providing a new value for the reply.
 	returnValues := function.Call(
 		[]reflect.Value{
