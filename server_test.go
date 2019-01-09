@@ -413,3 +413,34 @@ func TestMultiGo(t *testing.T) {
 		}
 	}
 }
+
+func testDecodeContext(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
+	s := NewServer(servHost, "rpc")
+	c := NewClientWithServer(clientHost, "rpc", s)
+
+	var arith Arith
+	arith.ctxTracker = &ctxTracker{}
+	s.Register(&arith)
+
+	ctx := context.Background()
+	var res int
+	err := c.CallContext(ctx, dest, "Arith", "Add", Args{1, 1}, &res)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestDecodeContext(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	t.Run("local", func(t *testing.T) {
+		testDecodeContext(t, h1, h2, h2.ID())
+	})
+
+	t.Run("remote", func(t *testing.T) {
+		testDecodeContext(t, h1, h2, h1.ID())
+	})
+}

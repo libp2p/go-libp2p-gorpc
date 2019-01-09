@@ -5,18 +5,31 @@ import (
 	"io"
 	"sync"
 
+	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 	host "github.com/libp2p/go-libp2p-host"
 	inet "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
 )
 
+// ClientOption allows for functional setting of options on a Client.
+type ClientOption func(*Client)
+
+// WithClientStatsHandler providers a implementation of stats.Handler to be
+// used by the Client.
+func WithClientStatsHandler(h stats.Handler) ClientOption {
+	return func(c *Client) {
+		c.statsHandler = h
+	}
+}
+
 // Client represents an RPC client which can perform calls to a remote
 // (or local, see below) Server.
 type Client struct {
-	host     host.Host
-	protocol protocol.ID
-	server   *Server
+	host         host.Host
+	protocol     protocol.ID
+	server       *Server
+	statsHandler stats.Handler
 }
 
 // NewClient returns a new Client which uses the given LibP2P host
@@ -27,18 +40,24 @@ type Client struct {
 // The client returned will not be able to run any local requests
 // if the Server is sharing the same LibP2P host. See NewClientWithServer
 // if this is a usecase.
-func NewClient(h host.Host, p protocol.ID) *Client {
-	return &Client{
+func NewClient(h host.Host, p protocol.ID, opts ...ClientOption) *Client {
+	c := &Client{
 		host:     h,
 		protocol: p,
 	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
 }
 
 // NewClientWithServer takes an additional RPC Server and returns a Client
 // which will perform any requests to itself by using the given Server.Call()
 // directly. It is assumed that Client and Server share the same LibP2P host.
-func NewClientWithServer(h host.Host, p protocol.ID, s *Server) *Client {
-	c := NewClient(h, p)
+func NewClientWithServer(h host.Host, p protocol.ID, s *Server, opts ...ClientOption) *Client {
+	c := NewClient(h, p, opts...)
 	c.server = s
 	return c
 }
