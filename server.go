@@ -103,21 +103,22 @@ type Response struct {
 	ErrType responseErr
 }
 
-// Permissions maps "service.method" of a peer to boolean permission
-type Permissions map[peer.ID]map[string]bool
-
-// AuthorizeWithMap returns an authrorization function that follows the authorization strategy as described in the
+// AuthorizeWithMap returns an authrorization function that follows the strategy as described in the
 // given map(maps "service.method" of a peer to boolean permission)
-func AuthorizeWithMap(p Permissions) func(peer.ID, string, string) bool {
-	if p != nil {
-		return func(pid peer.ID, svc string, method string) bool {
-			return p[pid][svc+"."+method]
-		}
-	}
-
-	// If permission map is nil, no method would be allowed
+func AuthorizeWithMap(p map[peer.ID]map[string]bool) func(peer.ID, string, string) bool {
 	return func(pid peer.ID, svc string, method string) bool {
-		return false
+		// If map is nil, no method would be allowed
+		if p == nil {
+			return false
+		}
+		return p[pid][svc+"."+method]
+	}
+}
+
+// WithAuthorize adds authorization to the server using given authorization function
+func WithAuthorize(a func(peer.ID, string, string) bool) ServerOption {
+	return func(s *Server) {
+		s.authorize = a
 	}
 }
 
@@ -147,9 +148,9 @@ type Server struct {
 	mu         sync.RWMutex // protects the serviceMap
 	serviceMap map[string]*service
 
-	// Authorize defines authorization strategy of the server
-	// If Authorization function is not provided, no methods would be allowed
-	Authorize func(peer.ID, string, string) bool
+	// authorize defines authorization strategy of the server
+	// If Authorization function is not provided, all methods would be allowed
+	authorize func(peer.ID, string, string) bool
 }
 
 // NewServer creates a Server object with the given LibP2P host
@@ -227,6 +228,12 @@ func (server *Server) handle(s *streamWrap) error {
 		return newServerError(err)
 	}
 
+	if server.authorize != nil && !server.authorize(s.stream.Conn().RemotePeer(), svcID.Name, svcID.Method) {
+		errMsg := fmt.Sprintf("client does not have permissions to this method, service name: %s, method name: %s", svcID.Name, svcID.Method)
+		resp := &Response{svcID, errMsg, serverErr}
+		return sendResponse(s, resp, nil)
+	}
+
 	// Decode the argument value.
 	argIsValue := false // if true, need to indirect before calling.
 	if mtype.ArgType.Kind() == reflect.Ptr {
@@ -244,11 +251,6 @@ func (server *Server) handle(s *streamWrap) error {
 	}
 
 	replyv = reflect.New(mtype.ReplyType.Elem())
-
-	if server.Authorize == nil || !server.Authorize(s.stream.Conn().RemotePeer(), svcID.Name, svcID.Method) {
-		resp := &Response{svcID, "client does not have permissions to this method, service name: " + svcID.Name + ", method name: " + svcID.Method, serverErr}
-		return sendResponse(s, resp, replyv.Interface())
-	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

@@ -5,17 +5,18 @@ import (
 	"io"
 	"sync"
 
-	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 	host "github.com/libp2p/go-libp2p-host"
 	inet "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
+
+	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 )
 
 // ClientOption allows for functional setting of options on a Client.
 type ClientOption func(*Client)
 
-// WithClientStatsHandler providers a implementation of stats.Handler to be
+// WithClientStatsHandler provides an implementation of stats.Handler to be
 // used by the Client.
 func WithClientStatsHandler(h stats.Handler) ClientOption {
 	return func(c *Client) {
