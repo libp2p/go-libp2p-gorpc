@@ -103,8 +103,9 @@ type Response struct {
 	ErrType responseErr
 }
 
-// AuthorizeWithMap returns an authrorization function that follows the strategy as described in the
-// given map(maps "service.method" of a peer to boolean permission)
+// AuthorizeWithMap returns an authrorization function that follows the
+// strategy as described in the given map(maps "service.method" of a peer to
+// boolean permission).
 func AuthorizeWithMap(p map[peer.ID]map[string]bool) func(peer.ID, string, string) bool {
 	return func(pid peer.ID, svc string, method string) bool {
 		// If map is nil, no method would be allowed
@@ -115,8 +116,10 @@ func AuthorizeWithMap(p map[peer.ID]map[string]bool) func(peer.ID, string, strin
 	}
 }
 
-// WithAuthorize adds authorization to the server using given authorization function
-func WithAuthorize(a func(peer.ID, string, string) bool) ServerOption {
+// WithAuthorizeFunc adds authorization strategy(A function defining whether
+// the given peer id is allowed to access given method of the given service)
+// to the server using given authorization function.
+func WithAuthorizeFunc(a func(pid peer.ID, name string, method string) bool) ServerOption {
 	return func(s *Server) {
 		s.authorize = a
 	}
@@ -149,7 +152,7 @@ type Server struct {
 	serviceMap map[string]*service
 
 	// authorize defines authorization strategy of the server
-	// If Authorization function is not provided, all methods would be allowed
+	// If Authorization function is not provided, all methods would be allowed.
 	authorize func(peer.ID, string, string) bool
 }
 
@@ -230,8 +233,7 @@ func (server *Server) handle(s *streamWrap) error {
 
 	if server.authorize != nil && !server.authorize(s.stream.Conn().RemotePeer(), svcID.Name, svcID.Method) {
 		errMsg := fmt.Sprintf("client does not have permissions to this method, service name: %s, method name: %s", svcID.Name, svcID.Method)
-		resp := &Response{svcID, errMsg, serverErr}
-		return sendResponse(s, resp, nil)
+		return newServerError(errors.New(errMsg))
 	}
 
 	// Decode the argument value.
