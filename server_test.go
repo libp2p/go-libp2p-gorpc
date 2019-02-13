@@ -444,3 +444,50 @@ func TestDecodeContext(t *testing.T) {
 		testDecodeContext(t, h1, h2, h1.ID())
 	})
 }
+
+func TestAuthorization(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	authorizationFunc := func(pid peer.ID, svc string, method string) bool {
+		if method == "Multiply" {
+			return true
+		}
+		return false
+	}
+
+	s := NewServer(h1, "rpc", WithAuthorizeFunc(authorizationFunc))
+	c := NewClientWithServer(h2, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+
+	dest := h1.ID()
+
+	var r int
+	err := c.Call(dest, "Arith", "Multiply", &Args{2, 3}, &r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r != 6 {
+		t.Error("result is:", r)
+	}
+
+	var q Quotient
+	err = c.Call(dest, "Arith", "Divide", &Args{20, 6}, &q)
+	if err == nil {
+		t.Fatal("expected error instead")
+	}
+	expectedErrMsg := "client does not have permissions to this method, service name: Arith, method name: Divide"
+	actualErrMsg := err.Error()
+	if actualErrMsg != expectedErrMsg {
+		t.Error("expected a different error, but found:", actualErrMsg)
+	}
+
+	// Authorization should not impact while accessing methods locally.
+	// All methods should be allowed locally.
+	t.Run("local", func(t *testing.T) {
+		testCall(t, h1, h2, "")
+	})
+
+}

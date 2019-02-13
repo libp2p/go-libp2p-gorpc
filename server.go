@@ -106,7 +106,7 @@ type Response struct {
 // AuthorizeWithMap returns an authrorization function that follows the
 // strategy as described in the given map(maps "service.method" of a peer to
 // boolean permission).
-func AuthorizeWithMap(p map[peer.ID]map[string]bool) func(peer.ID, string, string) bool {
+func AuthorizeWithMap(p map[peer.ID]map[string]bool) func(pid peer.ID, svc string, method string) bool {
 	return func(pid peer.ID, svc string, method string) bool {
 		// If map is nil, no method would be allowed
 		if p == nil {
