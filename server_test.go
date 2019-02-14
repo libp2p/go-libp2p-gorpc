@@ -450,12 +450,19 @@ func TestAuthorization(t *testing.T) {
 	defer h1.Close()
 	defer h2.Close()
 
-	authorizationFunc := func(pid peer.ID, svc string, method string) bool {
-		if method == "Multiply" {
-			return true
-		}
-		return false
-	}
+	h3, _ := libp2p.New(
+		context.Background(),
+		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/19997"),
+	)
+	h3.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), peerstore.PermanentAddrTTL)
+
+	authorizationFunc := AuthorizeWithMap(
+		map[peer.ID]map[string]bool{
+			h2.ID(): map[string]bool{
+				"Arith.Multiply": true,
+			},
+		},
+	)
 
 	s := NewServer(h1, "rpc", WithAuthorizeFunc(authorizationFunc))
 	c := NewClientWithServer(h2, "rpc", s)
@@ -480,6 +487,17 @@ func TestAuthorization(t *testing.T) {
 	}
 	expectedErrMsg := "client does not have permissions to this method, service name: Arith, method name: Divide"
 	actualErrMsg := err.Error()
+	if actualErrMsg != expectedErrMsg {
+		t.Error("expected a different error, but found:", actualErrMsg)
+	}
+
+	c1 := NewClientWithServer(h3, "rpc", s)
+	err = c1.Call(dest, "Arith", "Multiply", &Args{2, 3}, &r)
+	if err == nil {
+		t.Fatal("expected error instead")
+	}
+	expectedErrMsg = "client does not have permissions to this method, service name: Arith, method name: Multiply"
+	actualErrMsg = err.Error()
 	if actualErrMsg != expectedErrMsg {
 		t.Error("expected a different error, but found:", actualErrMsg)
 	}
