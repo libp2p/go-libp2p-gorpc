@@ -9,15 +9,15 @@
   "gxDependencies": [
     {
       "author": "whyrusleeping",
-      "hash": "QmdJdFQc5U3RAKgJQGmWR7SSM7TLuER5FWz5Wq6Tzs2CnS",
+      "hash": "QmebEmt23jQxrwnqBkFL4qbpE8EnnQunpv5U32LS5ESus1",
       "name": "go-libp2p",
-      "version": "6.0.29"
+      "version": "6.0.33"
     },
     {
-      "author": "multiformats",
-      "hash": "QmYMiyZRYDmhMr2phMc4FGrYbsyzvR751BgeobnWroiq2z",
-      "name": "go-multicodec",
-      "version": "0.1.7"
+      "author": "ugorji",
+      "hash": "QmVTAmbCaPqdfbmpWDCJMQNFxbyJoG2USFsumXmTWY5LFp",
+      "name": "go-codec",
+      "version": "2017.10.18"
     }
   ],
   "gxVersion": "0.10.0",
@@ -25,6 +25,6 @@
   "license": "MIT/BSD",
   "name": "go-libp2p-gorpc",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.1.0"
+  "version": "1.1.1"
 }
 

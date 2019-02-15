@@ -4,8 +4,7 @@ import (
 	"bufio"
 
 	inet "github.com/libp2p/go-libp2p-net"
-	multicodec "github.com/multiformats/go-multicodec"
-	msgpack "github.com/multiformats/go-multicodec/msgpack"
+	"github.com/ugorji/go/codec"
 )
 
 // streamWrap wraps a libp2p stream. We encode/decode whenever we
@@ -13,8 +12,8 @@ import (
 // and bufios with us
 type streamWrap struct {
 	stream inet.Stream
-	enc    multicodec.Encoder
-	dec    multicodec.Decoder
+	enc    *codec.Encoder
+	dec    *codec.Decoder
 	w      *bufio.Writer
 	r      *bufio.Reader
 }
@@ -27,8 +26,9 @@ type streamWrap struct {
 func wrapStream(s inet.Stream) *streamWrap {
 	reader := bufio.NewReader(s)
 	writer := bufio.NewWriter(s)
-	dec := msgpack.Multicodec(msgpack.DefaultMsgpackHandle()).Decoder(reader)
-	enc := msgpack.Multicodec(msgpack.DefaultMsgpackHandle()).Encoder(writer)
+	h := &codec.MsgpackHandle{}
+	dec := codec.NewDecoder(reader, h)
+	enc := codec.NewEncoder(writer, h)
 	return &streamWrap{
 		stream: s,
 		r:      reader,
