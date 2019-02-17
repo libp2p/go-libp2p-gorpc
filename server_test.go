@@ -488,11 +488,6 @@ func TestAuthorization(t *testing.T) {
 	if !IsAuthError(err) {
 		t.Error("expected authorization error, but found", responseErrorType(err))
 	}
-	expectedErrMsg := "client does not have permissions to this method, service name: Arith, method name: Divide"
-	actualErrMsg := err.Error()
-	if actualErrMsg != expectedErrMsg {
-		t.Error("expected a different error, but found:", actualErrMsg)
-	}
 
 	c1 := NewClientWithServer(h3, "rpc", s)
 	err = c1.Call(dest, "Arith", "Multiply", &Args{2, 3}, &r)
@@ -501,11 +496,6 @@ func TestAuthorization(t *testing.T) {
 	}
 	if !IsAuthError(err) {
 		t.Error("expected authorization error, but found", responseErrorType(err))
-	}
-	expectedErrMsg = "client does not have permissions to this method, service name: Arith, method name: Multiply"
-	actualErrMsg = err.Error()
-	if actualErrMsg != expectedErrMsg {
-		t.Error("expected a different error, but found:", actualErrMsg)
 	}
 
 	// Authorization should not impact while accessing methods locally.
