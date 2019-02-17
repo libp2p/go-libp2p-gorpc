@@ -485,6 +485,9 @@ func TestAuthorization(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error instead")
 	}
+	if !IsAuthError(err) {
+		t.Error("expected authorization error, but found", responseErrorType(err))
+	}
 	expectedErrMsg := "client does not have permissions to this method, service name: Arith, method name: Divide"
 	actualErrMsg := err.Error()
 	if actualErrMsg != expectedErrMsg {
@@ -495,6 +498,9 @@ func TestAuthorization(t *testing.T) {
 	err = c1.Call(dest, "Arith", "Multiply", &Args{2, 3}, &r)
 	if err == nil {
 		t.Fatal("expected error instead")
+	}
+	if !IsAuthError(err) {
+		t.Error("expected authorization error, but found", responseErrorType(err))
 	}
 	expectedErrMsg = "client does not have permissions to this method, service name: Arith, method name: Multiply"
 	actualErrMsg = err.Error()
