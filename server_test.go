@@ -485,7 +485,7 @@ func TestAuthorization(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error instead")
 	}
-	if !IsAuthError(err) {
+	if !IsAuthorizationError(err) {
 		t.Error("expected authorization error, but found", responseErrorType(err))
 	}
 
@@ -494,7 +494,7 @@ func TestAuthorization(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error instead")
 	}
-	if !IsAuthError(err) {
+	if !IsAuthorizationError(err) {
 		t.Error("expected authorization error, but found", responseErrorType(err))
 	}
 

@@ -15,7 +15,7 @@ const (
 	clientErr
 	// authErr is an error that has arisen because client doesn't
 	// have permissions to make the given rpc request
-	authErr
+	authorizationErr
 )
 
 // serverError indicates that error originated in server
@@ -71,7 +71,7 @@ func responseError(errType responseErr, errMsg string) error {
 		return &serverError{errMsg}
 	case clientErr:
 		return &clientError{errMsg}
-	case authErr:
+	case authorizationErr:
 		return &authError{errMsg}
 	default:
 		return errors.New(errMsg)
@@ -88,7 +88,7 @@ func responseErrorType(err error) responseErr {
 	case *clientError:
 		return clientErr
 	case *authError:
-		return authErr
+		return authorizationErr
 	default:
 		return nonRPCErr
 	}
@@ -115,7 +115,7 @@ func IsClientError(err error) bool {
 	return responseErrorType(err) == clientErr
 }
 
-// IsAuthError returns whether an error is authError.
-func IsAuthError(err error) bool {
-	return responseErrorType(err) == authErr
+// IsAuthorizationError returns whether an error is authError.
+func IsAuthorizationError(err error) bool {
+	return responseErrorType(err) == authorizationErr
 }
