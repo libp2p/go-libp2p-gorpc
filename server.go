@@ -233,7 +233,7 @@ func (server *Server) handle(s *streamWrap) error {
 
 	if server.authorize != nil && !server.authorize(s.stream.Conn().RemotePeer(), svcID.Name, svcID.Method) {
 		errMsg := fmt.Sprintf("client does not have permissions to this method, service name: %s, method name: %s", svcID.Name, svcID.Method)
-		return newAuthError(errors.New(errMsg))
+		return newAuthorizationError(errors.New(errMsg))
 	}
 
 	// Decode the argument value.

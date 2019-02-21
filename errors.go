@@ -13,7 +13,7 @@ const (
 	serverErr
 	// clientErr is an error that has arisen on the client side.
 	clientErr
-	// authErr is an error that has arisen because client doesn't
+	// authorizationErr is an error that has arisen because client doesn't
 	// have permissions to make the given rpc request
 	authorizationErr
 )
@@ -48,19 +48,19 @@ func newClientError(err error) error {
 	return &clientError{err.Error()}
 }
 
-// authError indicates that error originated because of client not having
+// authorizationError indicates that error originated because of client not having
 // permissions to make given rpc request
-type authError struct {
+type authorizationError struct {
 	msg string
 }
 
-func (a *authError) Error() string {
+func (a *authorizationError) Error() string {
 	return a.msg
 }
 
-// newAuthError wraps an error in the authError type.
-func newAuthError(err error) error {
-	return &authError{err.Error()}
+// newAuthorizationError wraps an error in the authorizationError type.
+func newAuthorizationError(err error) error {
+	return &authorizationError{err.Error()}
 }
 
 // responseError converts an responseErr and error message string
@@ -72,7 +72,7 @@ func responseError(errType responseErr, errMsg string) error {
 	case clientErr:
 		return &clientError{errMsg}
 	case authorizationErr:
-		return &authError{errMsg}
+		return &authorizationError{errMsg}
 	default:
 		return errors.New(errMsg)
 	}
@@ -87,7 +87,7 @@ func responseErrorType(err error) responseErr {
 		return serverErr
 	case *clientError:
 		return clientErr
-	case *authError:
+	case *authorizationError:
 		return authorizationErr
 	default:
 		return nonRPCErr
@@ -98,7 +98,7 @@ func responseErrorType(err error) responseErr {
 // or clientError.
 func IsRPCError(err error) bool {
 	switch err.(type) {
-	case *serverError, *clientError, *authError:
+	case *serverError, *clientError, *authorizationError:
 		return true
 	default:
 		return false
@@ -115,7 +115,7 @@ func IsClientError(err error) bool {
 	return responseErrorType(err) == clientErr
 }
 
-// IsAuthorizationError returns whether an error is authError.
+// IsAuthorizationError returns whether an error is authorizationError.
 func IsAuthorizationError(err error) bool {
 	return responseErrorType(err) == authorizationErr
 }
