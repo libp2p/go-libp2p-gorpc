@@ -13,6 +13,9 @@ const (
 	serverErr
 	// clientErr is an error that has arisen on the client side.
 	clientErr
+	// authorizationErr is an error that has arisen because client doesn't
+	// have permissions to make the given rpc request
+	authorizationErr
 )
 
 // serverError indicates that error originated in server
@@ -45,6 +48,21 @@ func newClientError(err error) error {
 	return &clientError{err.Error()}
 }
 
+// authorizationError indicates that error originated because of client not having
+// permissions to make given rpc request
+type authorizationError struct {
+	msg string
+}
+
+func (a *authorizationError) Error() string {
+	return a.msg
+}
+
+// newAuthorizationError wraps an error in the authorizationError type.
+func newAuthorizationError(err error) error {
+	return &authorizationError{err.Error()}
+}
+
 // responseError converts an responseErr and error message string
 // into the appropriate error type.
 func responseError(errType responseErr, errMsg string) error {
@@ -53,6 +71,8 @@ func responseError(errType responseErr, errMsg string) error {
 		return &serverError{errMsg}
 	case clientErr:
 		return &clientError{errMsg}
+	case authorizationErr:
+		return &authorizationError{errMsg}
 	default:
 		return errors.New(errMsg)
 	}
@@ -67,6 +87,8 @@ func responseErrorType(err error) responseErr {
 		return serverErr
 	case *clientError:
 		return clientErr
+	case *authorizationError:
+		return authorizationErr
 	default:
 		return nonRPCErr
 	}
@@ -76,7 +98,7 @@ func responseErrorType(err error) responseErr {
 // or clientError.
 func IsRPCError(err error) bool {
 	switch err.(type) {
-	case *serverError, *clientError:
+	case *serverError, *clientError, *authorizationError:
 		return true
 	default:
 		return false
@@ -91,4 +113,9 @@ func IsServerError(err error) bool {
 // IsClientError returns whether an error is clientError.
 func IsClientError(err error) bool {
 	return responseErrorType(err) == clientErr
+}
+
+// IsAuthorizationError returns whether an error is authorizationError.
+func IsAuthorizationError(err error) bool {
+	return responseErrorType(err) == authorizationErr
 }

@@ -59,11 +59,12 @@ import (
 	"unicode/utf8"
 
 	logging "github.com/ipfs/go-log"
-	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 	host "github.com/libp2p/go-libp2p-host"
 	inet "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
+
+	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 )
 
 var logger = logging.Logger("p2p-gorpc")
@@ -102,6 +103,28 @@ type Response struct {
 	ErrType responseErr
 }
 
+// AuthorizeWithMap returns an authrorization function that follows the
+// strategy as described in the given map(maps "service.method" of a peer to
+// boolean permission).
+func AuthorizeWithMap(p map[peer.ID]map[string]bool) func(pid peer.ID, svc string, method string) bool {
+	return func(pid peer.ID, svc string, method string) bool {
+		// If map is nil, no method would be allowed
+		if p == nil {
+			return false
+		}
+		return p[pid][svc+"."+method]
+	}
+}
+
+// WithAuthorizeFunc adds authorization strategy(A function defining whether
+// the given peer id is allowed to access given method of the given service)
+// to the server using given authorization function.
+func WithAuthorizeFunc(a func(pid peer.ID, name string, method string) bool) ServerOption {
+	return func(s *Server) {
+		s.authorize = a
+	}
+}
+
 // ServerOption allows for functional setting of options on a Server.
 type ServerOption func(*Server)
 
@@ -127,6 +150,10 @@ type Server struct {
 
 	mu         sync.RWMutex // protects the serviceMap
 	serviceMap map[string]*service
+
+	// authorize defines authorization strategy of the server
+	// If Authorization function is not provided, all methods would be allowed.
+	authorize func(peer.ID, string, string) bool
 }
 
 // NewServer creates a Server object with the given LibP2P host
@@ -202,6 +229,11 @@ func (server *Server) handle(s *streamWrap) error {
 	service, mtype, err := server.getService(svcID)
 	if err != nil {
 		return newServerError(err)
+	}
+
+	if server.authorize != nil && !server.authorize(s.stream.Conn().RemotePeer(), svcID.Name, svcID.Method) {
+		errMsg := fmt.Sprintf("client does not have permissions to this method, service name: %s, method name: %s", svcID.Name, svcID.Method)
+		return newAuthorizationError(errors.New(errMsg))
 	}
 
 	// Decode the argument value.
