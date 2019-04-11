@@ -21,12 +21,16 @@
 
 ## Install
 
-This module is published as a [GX module](https://github.com/whyrusleeping/gx-go). Use GX to import it as a dependency.
-Alternatively, you can download it and run:
+This module can be installed with `go get`:
 
 ```
-make deps
+> go get github.com/libp2p/go-libp2p-gorpc
 ```
+
+This repo is [gomod](https://github.com/golang/go/wiki/Modules)-compatible, and users of
+go 1.11 and later with modules enabled will automatically pull the latest tagged release
+by referencing this package. Upgrades to future releases can be managed using `go get`,
+or by editing your `go.mod` file as [described by the gomod documentation](https://github.com/golang/go/wiki/Modules#how-to-upgrade-and-downgrade-dependencies).
 
 ## Usage
 
