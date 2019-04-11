@@ -47,3 +47,7 @@ Small note: If editing the README, please conform to the [standard-readme](https
 ## License
 
 MIT
+
+---
+
+The last gx published version of this module was: 1.1.4: QmcJCApoEsCJJap2iS1os9GFX5EuRrfuPeZdjCopz2SyPm
