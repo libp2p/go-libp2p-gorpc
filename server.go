@@ -192,7 +192,7 @@ func (server *Server) ID() peer.ID {
 }
 
 func (server *Server) handle(s *streamWrap) error {
-	logger.Debugf("%s: handling remote RPC", server.host.ID().Pretty())
+	logger.Debugf("%s: handling remote RPC from %s", server.host.ID().Pretty(), s.stream.Conn().RemotePeer())
 	var err error
 	var svcID ServiceID
 	var argv, replyv reflect.Value
