@@ -5,8 +5,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/ipfs/go-log v0.0.1
-	github.com/libp2p/go-libp2p v0.0.28
-	github.com/libp2p/go-libp2p-circuit v0.0.8 // indirect
+	github.com/libp2p/go-libp2p v0.0.30
 	github.com/libp2p/go-libp2p-host v0.0.3
 	github.com/libp2p/go-libp2p-net v0.0.2
 	github.com/libp2p/go-libp2p-peer v0.2.0
