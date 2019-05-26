@@ -1,49 +1,47 @@
-/*
-Package rpc is heavily inspired by Go standard net/rpc package. It aims to
-do the same thing, except it uses Libp2p for communication and provides
-context support for cancelling operations.
-
-A server registers an object, making it visible as a service with the name of
-the type of the object.  After registration, exported methods of the object
-will be accessible remotely.  A server may register multiple objects
-(services) of different types but it is an error to register multiple objects
-of the same type.
-
-Only methods that satisfy these criteria will be made available for remote
-access; other methods will be ignored:
-	- the method's type is exported.
-	- the method is exported.
-	- the method has 3 arguments.
-	- the method's first argument is a context.
-	- the method's second are third arguments are both exported (or builtin) types.
-	- the method's second argument is a pointer.
-	- the method has return type error.
-
-In effect, the method must look schematically like
-
-	func (t *T) MethodName(ctx context.Context, argType T1, replyType *T2) error
-
-where T1 and T2 can be marshaled by encoding/gob.
-
-The method's first argument represents the arguments provided by the caller;
-the second argument represents the result parameters to be returned to the
-caller.  The method's return value, if non-nil, is passed back as a string
-that the client sees as if created by errors.New.  If an error is returned,
-the reply parameter may not be sent back to the client.
-
-In order to use this package, a ready-to-go LibP2P Host must be provided
-to clients and servers, along with a protocol.ID. rpc will add a stream
-handler for the given protocol. Hosts must be ready to speak to clients,
-that is, peers must be part of the peerstore along with keys if secio
-communication is required.
-
-Since version 2.0.0, contexts are supported and honored. On the server side,
-methods must take a context. A closure or reset of the libp2p stream will
-trigger a cancellation of the context received by the functions.
-On the client side, the user can optionally provide a context.
-Cancelling the client's context will cancel the operation both on the
-client and on the server side (by closing the associated stream).
-*/
+// Package rpc is heavily inspired by Go standard net/rpc package. It aims to
+// do the same thing, except it uses Libp2p for communication and provides
+// context support for cancelling operations.
+//
+// A server registers an object, making it visible as a service with the name of
+// the type of the object.  After registration, exported methods of the object
+// will be accessible remotely.  A server may register multiple objects
+// (services) of different types but it is an error to register multiple objects
+// of the same type.
+//
+// Only methods that satisfy these criteria will be made available for remote
+// access; other methods will be ignored:
+// 	- the method's type is exported.
+// 	- the method is exported.
+// 	- the method has 3 arguments.
+// 	- the method's first argument is a context.
+// 	- the method's second are third arguments are both exported (or builtin) types.
+// 	- the method's second argument is a pointer.
+// 	- the method has return type error.
+//
+// In effect, the method must look schematically like
+//
+// 	func (t *T) MethodName(ctx context.Context, argType T1, replyType *T2) error
+//
+// where T1 and T2 can be marshaled by encoding/gob.
+//
+// The method's first argument represents the arguments provided by the caller;
+// the second argument represents the result parameters to be returned to the
+// caller.  The method's return value, if non-nil, is passed back as a string
+// that the client sees as if created by errors.New.  If an error is returned,
+// the reply parameter may not be sent back to the client.
+//
+// In order to use this package, a ready-to-go LibP2P Host must be provided
+// to clients and servers, along with a protocol.ID. rpc will add a stream
+// handler for the given protocol. Hosts must be ready to speak to clients,
+// that is, peers must be part of the peerstore along with keys if secio
+// communication is required.
+//
+// Since version 2.0.0, contexts are supported and honored. On the server side,
+// methods must take a context. A closure or reset of the libp2p stream will
+// trigger a cancellation of the context received by the functions.
+// On the client side, the user can optionally provide a context.
+// Cancelling the client's context will cancel the operation both on the
+// client and on the server side (by closing the associated stream).
 package rpc
 
 import (
@@ -58,12 +56,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	logging "github.com/ipfs/go-log"
-	host "github.com/libp2p/go-libp2p-host"
-	inet "github.com/libp2p/go-libp2p-net"
-	peer "github.com/libp2p/go-libp2p-peer"
-	protocol "github.com/libp2p/go-libp2p-protocol"
+	"github.com/libp2p/go-libp2p-core/helpers"
+	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 
+	logging "github.com/ipfs/go-log"
 	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 )
 
@@ -169,9 +168,9 @@ func NewServer(h host.Host, p protocol.ID, opts ...ServerOption) *Server {
 	}
 
 	if h != nil {
-		h.SetStreamHandler(p, func(stream inet.Stream) {
+		h.SetStreamHandler(p, func(stream network.Stream) {
 			sWrap := wrapStream(stream)
-			defer inet.FullClose(stream)
+			defer helpers.FullClose(stream)
 			err := s.handle(sWrap)
 			if err != nil {
 				logger.Error("error handling RPC:", err)
