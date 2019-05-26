@@ -4,8 +4,9 @@ import (
 	"context"
 	"sync"
 
-	inet "github.com/libp2p/go-libp2p-net"
-	peer "github.com/libp2p/go-libp2p-peer"
+	"github.com/libp2p/go-libp2p-core/helpers"
+	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p-core/peer"
 )
 
 // Call represents an active RPC. Calls are used to indicate completion
@@ -74,7 +75,7 @@ func (call *Call) isFinished() bool {
 
 // watch context will wait for a context cancellation
 // and close the stream.
-func (call *Call) watchContextWithStream(s inet.Stream) {
+func (call *Call) watchContextWithStream(s network.Stream) {
 	select {
 	case <-call.ctx.Done():
 		if !call.isFinished() { // context was cancelled not by us
@@ -83,7 +84,7 @@ func (call *Call) watchContextWithStream(s inet.Stream) {
 			// write to the stream without printing errors to
 			// the console (graceful fail) and eventually will
 			// reset.
-			go inet.FullClose(s)
+			go helpers.FullClose(s)
 			call.doneWithError(call.ctx.Err())
 		}
 	}

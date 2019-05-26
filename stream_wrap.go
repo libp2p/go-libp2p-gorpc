@@ -3,7 +3,8 @@ package rpc
 import (
 	"bufio"
 
-	inet "github.com/libp2p/go-libp2p-net"
+	"github.com/libp2p/go-libp2p-core/network"
+
 	"github.com/ugorji/go/codec"
 )
 
@@ -11,7 +12,7 @@ import (
 // write/read from a stream, so we can just carry the encoders
 // and bufios with us
 type streamWrap struct {
-	stream inet.Stream
+	stream network.Stream
 	enc    *codec.Encoder
 	dec    *codec.Decoder
 	w      *bufio.Writer
@@ -23,7 +24,7 @@ type streamWrap struct {
 // wrap.w.Write(). To encode something into it we can wrap.enc.Encode().
 // Finally, we should wrap.w.Flush() to actually send the data. Similar
 // for receiving.
-func wrapStream(s inet.Stream) *streamWrap {
+func wrapStream(s network.Stream) *streamWrap {
 	reader := bufio.NewReader(s)
 	writer := bufio.NewWriter(s)
 	h := &codec.MsgpackHandle{}

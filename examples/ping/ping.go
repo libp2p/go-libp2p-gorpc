@@ -10,11 +10,13 @@ import (
 
 	"log"
 
-	libp2p "github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
+
 	gorpc "github.com/libp2p/go-libp2p-gorpc"
-	host "github.com/libp2p/go-libp2p-host"
-	peerstore "github.com/libp2p/go-libp2p-peerstore"
-	protocol "github.com/libp2p/go-libp2p-protocol"
+
 	multiaddr "github.com/multiformats/go-multiaddr"
 )
 
@@ -82,7 +84,7 @@ func startClient(host string, pingCount, randomDataSize int) {
 	if err != nil {
 		panic(err)
 	}
-	peerInfo, err := peerstore.InfoFromP2pAddr(ma)
+	peerInfo, err := peer.AddrInfoFromP2pAddr(ma)
 	if err != nil {
 		panic(err)
 	}
