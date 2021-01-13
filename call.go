@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/libp2p/go-libp2p-core/helpers"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -80,11 +79,7 @@ func (call *Call) watchContextWithStream(s network.Stream) {
 	case <-call.ctx.Done():
 		if !call.isFinished() { // context was cancelled not by us
 			logger.Debug("call context is done before finishing")
-			// FullClose() instead of Reset(). This lets the other
-			// write to the stream without printing errors to
-			// the console (graceful fail) and eventually will
-			// reset.
-			go helpers.FullClose(s)
+			s.Close()
 			call.doneWithError(call.ctx.Err())
 		}
 	}

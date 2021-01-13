@@ -56,7 +56,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/libp2p/go-libp2p-core/helpers"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -170,7 +169,7 @@ func NewServer(h host.Host, p protocol.ID, opts ...ServerOption) *Server {
 	if h != nil {
 		h.SetStreamHandler(p, func(stream network.Stream) {
 			sWrap := wrapStream(stream)
-			defer helpers.FullClose(stream)
+			defer stream.Close()
 			err := s.handle(sWrap)
 			if err != nil {
 				logger.Error("error handling RPC:", err)
