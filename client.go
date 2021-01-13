@@ -5,7 +5,6 @@ import (
 	"io"
 	"sync"
 
-	"github.com/libp2p/go-libp2p-core/helpers"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -321,7 +320,7 @@ func (c *Client) send(call *Call) {
 		s.Reset()
 		return
 	}
-	go helpers.FullClose(s)
+	s.Close()
 }
 
 // receiveResponse reads a response to an RPC call
