@@ -79,8 +79,8 @@ func (call *Call) watchContextWithStream(s network.Stream) {
 	case <-call.ctx.Done():
 		if !call.isFinished() { // context was cancelled not by us
 			logger.Debug("call context is done before finishing")
-			s.Close()
 			call.doneWithError(call.ctx.Err())
+			s.Close()
 		}
 	}
 }
