@@ -4,8 +4,10 @@ import (
 	"context"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 
@@ -23,13 +25,20 @@ func WithClientStatsHandler(h stats.Handler) ClientOption {
 	}
 }
 
+func WithDefaultDialPeerTimeout(timeout time.Duration) ClientOption {
+	return func(c *Client) {
+		c.dialPeerTimeout = timeout
+	}
+}
+
 // Client represents an RPC client which can perform calls to a remote
 // (or local, see below) Server.
 type Client struct {
-	host         host.Host
-	protocol     protocol.ID
-	server       *Server
-	statsHandler stats.Handler
+	host            host.Host
+	protocol        protocol.ID
+	server          *Server
+	statsHandler    stats.Handler
+	dialPeerTimeout time.Duration
 }
 
 // NewClient returns a new Client which uses the given LibP2P host
@@ -91,6 +100,11 @@ func (c *Client) CallContext(
 	args, reply interface{},
 ) error {
 	done := make(chan *Call, 1)
+
+	if c.dialPeerTimeout > 0 {
+		ctx = network.WithDialPeerTimeout(ctx, c.dialPeerTimeout)
+	}
+
 	call := newCall(ctx, dest, svcName, svcMethod, args, reply, done)
 	go c.makeCall(call)
 	<-done
@@ -135,6 +149,11 @@ func (c *Client) GoContext(
 			panic("done channel has no capacity")
 		}
 	}
+
+	if c.dialPeerTimeout > 0 {
+		ctx = network.WithDialPeerTimeout(ctx, c.dialPeerTimeout)
+	}
+
 	call := newCall(ctx, dest, svcName, svcMethod, args, reply, done)
 	go c.makeCall(call)
 	return nil
