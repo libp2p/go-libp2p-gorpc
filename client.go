@@ -166,7 +166,7 @@ func (c *Client) MultiCall(
 	}
 
 	var wg sync.WaitGroup
-	errs := make([]error, len(dests), len(dests))
+	errs := make([]error, len(dests))
 
 	for i := range dests {
 		wg.Add(1)

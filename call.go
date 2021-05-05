@@ -75,13 +75,11 @@ func (call *Call) isFinished() bool {
 // watch context will wait for a context cancellation
 // and close the stream.
 func (call *Call) watchContextWithStream(s network.Stream) {
-	select {
-	case <-call.ctx.Done():
-		if !call.isFinished() { // context was cancelled not by us
-			logger.Debug("call context is done before finishing")
-			call.doneWithError(call.ctx.Err())
-			s.Close()
-		}
+	<-call.ctx.Done()
+	if !call.isFinished() { // context was cancelled not by us
+		logger.Debug("call context is done before finishing")
+		call.doneWithError(call.ctx.Err())
+		s.Close()
 	}
 }
 
