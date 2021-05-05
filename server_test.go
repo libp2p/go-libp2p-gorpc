@@ -337,9 +337,9 @@ func TestMultiCall(t *testing.T) {
 	var arith Arith
 	s.Register(&arith)
 
-	replies := make([]int, 2, 2)
-	ctxs := make([]context.Context, 2, 2)
-	repliesInt := make([]interface{}, 2, 2)
+	replies := make([]int, 2)
+	ctxs := make([]context.Context, 2)
+	repliesInt := make([]interface{}, 2)
 	for i := range repliesInt {
 		repliesInt[i] = &replies[i]
 		ctxs[i] = context.Background()
@@ -381,10 +381,10 @@ func TestMultiGo(t *testing.T) {
 	var arith Arith
 	s.Register(&arith)
 
-	replies := make([]int, 2, 2)
-	ctxs := make([]context.Context, 2, 2)
-	repliesInt := make([]interface{}, 2, 2)
-	dones := make([]chan *Call, 2, 2)
+	replies := make([]int, 2)
+	ctxs := make([]context.Context, 2)
+	repliesInt := make([]interface{}, 2)
+	dones := make([]chan *Call, 2)
 	for i := range repliesInt {
 		repliesInt[i] = &replies[i]
 		ctxs[i] = context.Background()
@@ -459,7 +459,7 @@ func TestAuthorization(t *testing.T) {
 
 	authorizationFunc := AuthorizeWithMap(
 		map[peer.ID]map[string]bool{
-			h2.ID(): map[string]bool{
+			h2.ID(): {
 				"Arith.Multiply": true,
 			},
 		},
