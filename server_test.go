@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -84,6 +85,12 @@ func (t *Arith) Sleep(ctx context.Context, secs int, res *struct{}) error {
 	case <-tim.C:
 		return nil
 	}
+}
+
+func (t *Arith) PrintHelloWorld(ctx context.Context, args struct{}, res *struct{}) error {
+	t.ctxTracker.setCtx(ctx)
+	fmt.Print("hello world!")
+	return nil
 }
 
 func makeRandomNodes() (h1, h2 host.Host) {
@@ -505,4 +512,50 @@ func TestAuthorization(t *testing.T) {
 		testCall(t, h1, h2, "")
 	})
 
+}
+
+func testRequestSenderPeerIDContext(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
+	s := NewServer(servHost, "rpc")
+	c := NewClientWithServer(clientHost, "rpc", s)
+
+	var arith Arith
+	arith.ctxTracker = &ctxTracker{}
+	err := s.Register(&arith)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.Call(dest, "Arith", "PrintHelloWorld", struct{}{}, &struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := GetRequestSender(arith.ctxTracker.ctx)
+	if err != nil && !errors.Is(err, ErrLocalCall) {
+		t.Fatal(err)
+	}
+
+	if dest == "" || dest == clientHost.ID() {
+		if p != "" {
+			t.Errorf("invalid peer id of request sender on local call: have: %s, want: nothing", p)
+		}
+	} else {
+		if p != clientHost.ID() {
+			t.Errorf("invalid peer id of request sender on remote call: have: %s, want: %s", p, clientHost.ID())
+		}
+	}
+}
+
+func TestRequestSenderPeerIDContext(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	t.Run("local", func(t *testing.T) {
+		testRequestSenderPeerIDContext(t, h1, h2, h2.ID())
+	})
+
+	t.Run("remote", func(t *testing.T) {
+		testRequestSenderPeerIDContext(t, h1, h2, h1.ID())
+	})
 }
