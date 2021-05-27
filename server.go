@@ -65,6 +65,10 @@ import (
 	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 )
 
+const (
+	ContextKeyRequestSender = "request_sender"
+)
+
 var logger = logging.Logger("p2p-gorpc")
 
 // Precompute the reflect type for error. Can't use error directly
@@ -252,6 +256,7 @@ func (server *Server) handle(s *streamWrap) error {
 
 	replyv = reflect.New(mtype.ReplyType.Elem())
 
+	ctx = context.WithValue(ctx, ContextKeyRequestSender, s.stream.Conn().RemotePeer())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -594,4 +599,15 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 		methods[mname] = &methodType{method: method, ArgType: argType, ReplyType: replyType}
 	}
 	return methods
+}
+
+// GetRequestSender gets current request sender from RPC service's function context
+// If it is nil, then consider this call as local.
+func GetRequestSender(ctx context.Context) *peer.ID {
+	v := ctx.Value(ContextKeyRequestSender)
+	if v == nil {
+		return nil
+	}
+	p := v.(peer.ID)
+	return &p
 }
