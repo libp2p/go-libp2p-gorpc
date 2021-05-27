@@ -66,10 +66,13 @@ import (
 )
 
 const (
+	// ContextKeyRequestSender is default key for RPC service function context to retrieve peer ID of current request sender
 	ContextKeyRequestSender = "request_sender"
 )
 
 var logger = logging.Logger("p2p-gorpc")
+
+var ErrLocalCall = errors.New("sender is missing: local call")
 
 // Precompute the reflect type for error. Can't use error directly
 // because Typeof takes an empty interface value. This is annoying.
@@ -602,12 +605,20 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 }
 
 // GetRequestSender gets current request sender from RPC service's function context
-// If it is nil, then consider this call as local.
-func GetRequestSender(ctx context.Context) *peer.ID {
+func GetRequestSender(ctx context.Context) (peer.ID, error) {
 	v := ctx.Value(ContextKeyRequestSender)
 	if v == nil {
-		return nil
+		return "", ErrLocalCall
 	}
-	p := v.(peer.ID)
-	return &p
+
+	p, ok := v.(peer.ID)
+	if !ok {
+		return "", fmt.Errorf("cannot convert request_sender context value to peer.ID")
+	}
+
+	if err := p.Validate(); err != nil {
+		return "", err
+	}
+	
+	return p, nil
 }
