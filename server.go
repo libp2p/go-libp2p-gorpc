@@ -72,8 +72,6 @@ const (
 
 var logger = logging.Logger("p2p-gorpc")
 
-var ErrLocalCall = errors.New("sender is missing: local call")
-
 // Precompute the reflect type for error. Can't use error directly
 // because Typeof takes an empty interface value. This is annoying.
 var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
@@ -368,8 +366,10 @@ func (server *Server) Call(call *Call) error {
 		return newServerError(err)
 	}
 
+	ctx := context.WithValue(call.ctx, ContextKeyRequestSender, server.ID()) // add local peer id as request sender
+
 	// Use the context value from the call directly
-	ctxv := reflect.ValueOf(call.ctx)
+	ctxv := reflect.ValueOf(ctx)
 
 	// Decode the argument value.
 	argIsValue := false // if true, need to indirect before calling.
@@ -608,7 +608,7 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 func GetRequestSender(ctx context.Context) (peer.ID, error) {
 	v := ctx.Value(ContextKeyRequestSender)
 	if v == nil {
-		return "", ErrLocalCall
+		return "", fmt.Errorf("sender is missing")
 	}
 
 	p, ok := v.(peer.ID)
@@ -619,6 +619,6 @@ func GetRequestSender(ctx context.Context) (peer.ID, error) {
 	if err := p.Validate(); err != nil {
 		return "", err
 	}
-	
+
 	return p, nil
 }

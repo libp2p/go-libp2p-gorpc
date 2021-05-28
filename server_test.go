@@ -531,13 +531,13 @@ func testRequestSenderPeerIDContext(t *testing.T, servHost, clientHost host.Host
 	}
 
 	p, err := GetRequestSender(arith.ctxTracker.ctx)
-	if err != nil && !errors.Is(err, ErrLocalCall) {
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	if dest == "" || dest == clientHost.ID() {
-		if p != "" {
-			t.Errorf("invalid peer id of request sender on local call: have: %s, want: nothing", p)
+		if p != servHost.ID() {
+			t.Errorf("invalid peer id of request sender on local call: have: %s, want: %s", p, servHost.ID())
 		}
 	} else {
 		if p != clientHost.ID() {
