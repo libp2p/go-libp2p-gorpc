@@ -65,9 +65,12 @@ import (
 	stats "github.com/libp2p/go-libp2p-gorpc/stats"
 )
 
+// ContextKey is special type for using as a key with context.Context
+type ContextKey string
+
 const (
 	// ContextKeyRequestSender is default key for RPC service function context to retrieve peer ID of current request sender
-	ContextKeyRequestSender = "request_sender"
+	ContextKeyRequestSender = ContextKey("request_sender")
 )
 
 var logger = logging.Logger("p2p-gorpc")
