@@ -53,9 +53,10 @@ func NewClient(h host.Host, p protocol.ID, opts ...ClientOption) *Client {
 	return c
 }
 
-// NewClientWithServer takes an additional RPC Server and returns a Client
-// which will perform any requests to itself by using the given Server.Call()
-// directly. It is assumed that Client and Server share the same LibP2P host.
+// NewClientWithServer takes an additional RPC Server and returns a Client.
+// Unlike the normal client, this one will be able to perform any requests to
+// itself by using the given Server.Call() directly. It is assumed that Client
+// and Server share the same LibP2P host.
 func NewClientWithServer(h host.Host, p protocol.ID, s *Server, opts ...ClientOption) *Client {
 	c := NewClient(h, p, opts...)
 	c.server = s
