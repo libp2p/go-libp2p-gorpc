@@ -35,10 +35,8 @@ func (t *PingService) Ping(ctx context.Context, argType PingArgs, replyType *Pin
 }
 
 func createPeer(listenAddr string) host.Host {
-	ctx := context.Background()
-
 	// Create a new libp2p host
-	h, err := libp2p.New(ctx, libp2p.ListenAddrStrings(listenAddr))
+	h, err := libp2p.New(libp2p.ListenAddrStrings(listenAddr))
 	if err != nil {
 		panic(err)
 	}
