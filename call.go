@@ -60,7 +60,7 @@ func (call *Call) done() {
 
 func (call *Call) doneWithError(err error) {
 	if err != nil {
-		logger.Error(err)
+		logger.Warning(err)
 		call.setError(err)
 	}
 	call.done()
