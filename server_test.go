@@ -95,11 +95,9 @@ func (t *Arith) PrintHelloWorld(ctx context.Context, args struct{}, res *struct{
 
 func makeRandomNodes() (h1, h2 host.Host) {
 	h1, _ = libp2p.New(
-		context.Background(),
 		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/19998"),
 	)
 	h2, _ = libp2p.New(
-		context.Background(),
 		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/19999"),
 	)
 
@@ -459,7 +457,6 @@ func TestAuthorization(t *testing.T) {
 	defer h2.Close()
 
 	h3, _ := libp2p.New(
-		context.Background(),
 		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/19997"),
 	)
 	h3.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), peerstore.PermanentAddrTTL)
