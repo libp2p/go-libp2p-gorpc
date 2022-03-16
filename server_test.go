@@ -18,7 +18,7 @@ import (
 )
 
 func init() {
-	logging.SetLogLevel("p2p-gorpc", "DEBUG")
+	logging.SetLogLevel("p2p-gorpc", "ERROR")
 	//logging.SetDebugLogging()
 }
 
@@ -36,12 +36,18 @@ type ctxTracker struct {
 }
 
 func (ctxt *ctxTracker) setCtx(ctx context.Context) {
+	if ctxt == nil {
+		return
+	}
 	ctxt.ctxMu.Lock()
 	defer ctxt.ctxMu.Unlock()
 	ctxt.ctx = ctx
 }
 
 func (ctxt *ctxTracker) cancelled() bool {
+	if ctxt == nil {
+		return false
+	}
 	ctxt.ctxMu.Lock()
 	defer ctxt.ctxMu.Unlock()
 	return ctxt.ctx.Err() != nil
@@ -90,6 +96,54 @@ func (t *Arith) Sleep(ctx context.Context, secs int, res *struct{}) error {
 func (t *Arith) PrintHelloWorld(ctx context.Context, args struct{}, res *struct{}) error {
 	t.ctxTracker.setCtx(ctx)
 	fmt.Print("hello world!")
+	return nil
+}
+
+func (t *Arith) DivideMyNumbers(ctx context.Context, args <-chan Args, quotients chan<- Quotient) error {
+	t.ctxTracker.setCtx(ctx)
+	for arg := range args {
+		if arg.A == 1234 {
+			time.Sleep(time.Second)
+		}
+
+		if arg.A == 666 {
+			// it does not close(quotients) on purpose
+			return errors.New("bad bad bad")
+		}
+
+		select {
+		case <-ctx.Done():
+			close(quotients)
+			return ctx.Err()
+		default:
+		}
+
+		if arg.B == 0 {
+			close(quotients)
+			return errors.New("divide by zero")
+		}
+		quo := Quotient{
+			Quo: arg.A / arg.B,
+			Rem: arg.A % arg.B,
+		}
+		quotients <- quo
+	}
+	close(quotients)
+	return nil
+}
+
+func (t *Arith) DivideMyNumbersPointers(ctx context.Context, args <-chan *Args, quotients chan<- *Quotient) error {
+	defer close(quotients)
+	for arg := range args {
+		if arg.B == 0 {
+			return errors.New("divide by zero")
+		}
+		quo := Quotient{
+			Quo: arg.A / arg.B,
+			Rem: arg.A % arg.B,
+		}
+		quotients <- &quo
+	}
 	return nil
 }
 
@@ -554,5 +608,440 @@ func TestRequestSenderPeerIDContext(t *testing.T) {
 
 	t.Run("remote", func(t *testing.T) {
 		testRequestSenderPeerIDContext(t, h1, h2, h1.ID())
+	})
+}
+
+func testStream(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
+	s := NewServer(servHost, "rpc")
+	c := NewClientWithServer(clientHost, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+
+	numbers := make(chan Args, 10)
+	quotients := make(chan Quotient, 10)
+
+	numbers <- Args{2, 3}
+	numbers <- Args{6, 2}
+	numbers <- Args{9, 5}
+	close(numbers)
+
+	err := c.Stream(context.Background(), dest, "Arith", "DivideMyNumbers", numbers, quotients)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(quotients) != 3 {
+		t.Fatal("expected 3 quotients waiting in channel")
+	}
+
+	q := <-quotients
+	if q.Quo != 0 || q.Rem != 2 {
+		t.Error("wrong result")
+	}
+
+	q = <-quotients
+	if q.Quo != 3 || q.Rem != 0 {
+		t.Error("wrong result")
+	}
+
+	q = <-quotients
+	if q.Quo != 1 || q.Rem != 4 {
+		t.Error("wrong result")
+	}
+
+	q, ok := <-quotients
+	if ok {
+		t.Error("channel should have been closed")
+	}
+
+	// Now test with pointer arguments
+	numbersP := make(chan *Args, 10)
+	quotientsP := make(chan *Quotient, 10)
+
+	numbersP <- &Args{2, 3}
+	close(numbersP)
+
+	err = c.Stream(context.Background(), dest, "Arith", "DivideMyNumbersPointers", numbersP, quotientsP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qP := <-quotientsP
+	if qP.Quo != 0 || qP.Rem != 2 {
+		t.Error("wrong result")
+	}
+	_, ok = <-quotientsP
+	if ok {
+		t.Error("channel should be closed")
+	}
+}
+
+func TestStream(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	t.Run("local", func(t *testing.T) {
+		testStream(t, h1, h2, h2.ID())
+	})
+
+	t.Run("remote", func(t *testing.T) {
+		testStream(t, h1, h2, h1.ID())
+	})
+}
+
+func testStreamError(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
+	s := NewServer(servHost, "rpc")
+	c := NewClientWithServer(clientHost, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+
+	numbers := make(chan Args, 10)
+	quotients := make(chan Quotient, 10)
+
+	numbers <- Args{2, 3}
+	numbers <- Args{6, 0}
+	close(numbers)
+
+	err := c.Stream(context.Background(), dest, "Arith", "DivideMyNumbers", numbers, quotients)
+	if err == nil {
+		t.Error("expected an error")
+	}
+
+	if err.Error() != "divide by zero" {
+		t.Error("wrong error message")
+	}
+
+	// sometimes the error comes in before the first response is posted on
+	// the channel, sometimes it doesn't. In any case, channel should be
+	// closed soon.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	wait := make(chan struct{})
+	go func() {
+		defer func() { wait <- struct{}{} }()
+		for {
+			select {
+			case <-ctx.Done():
+				t.Error("should have drained the channel")
+				return
+			case _, ok := <-quotients:
+				if !ok {
+					return
+				}
+			}
+		}
+
+	}()
+	<-wait
+}
+
+func TestStreamError(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	t.Run("local", func(t *testing.T) {
+		testStreamError(t, h1, h2, h2.ID())
+	})
+
+	t.Run("remote", func(t *testing.T) {
+		testStreamError(t, h1, h2, h1.ID())
+	})
+}
+
+func testStreamCancel(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
+	s := NewServer(servHost, "rpc")
+	c := NewClientWithServer(clientHost, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+	numbers := make(chan Args, 10)
+	quotients := make(chan Quotient, 10)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		numbers <- Args{2, 3}
+		numbers <- Args{1234, 5}
+		close(numbers)
+
+		err := c.Stream(ctx, dest, "Arith", "DivideMyNumbers", numbers, quotients)
+		if err == nil {
+			t.Error("expected an error")
+		}
+
+		if err.Error() != ctx.Err().Error() {
+			t.Error("wrong error message")
+		}
+	}()
+
+	// channel should be closed.
+	ctx2, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx2.Done():
+				t.Error("should have drained the channel")
+				return
+			case _, ok := <-quotients:
+				if !ok {
+					return
+				}
+			}
+		}
+
+	}()
+	wg.Wait()
+}
+
+func TestStreamCancel(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	t.Run("local", func(t *testing.T) {
+		testStreamCancel(t, h1, h2, h2.ID())
+	})
+
+	t.Run("remote", func(t *testing.T) {
+		testStreamCancel(t, h1, h2, h1.ID())
+	})
+}
+
+func TestMultiStream(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	s := NewServer(h1, "rpc")
+	s2 := NewServer(h2, "rpc")
+	c := NewClientWithServer(h1, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+	s2.Register(&arith)
+
+	ctxs := make([]context.Context, 2)
+	ctxs[0] = context.Background()
+	ctxs[1] = context.Background()
+
+	dests := make([]peer.ID, 2)
+	dests[0] = h1.ID()
+	dests[1] = h2.ID()
+
+	numbers := make(chan Args, 10)
+	quotientss := make([]interface{}, 2)
+	quotients1 := make(chan Quotient, 10)
+	quotients2 := make(chan Quotient, 10)
+	quotientss[0] = quotients1
+	quotientss[1] = quotients2
+
+	numbers <- Args{10, 3}
+	numbers <- Args{10, 3}
+	close(numbers)
+
+	errs := c.MultiStream(ctxs, dests, "Arith", "DivideMyNumbers", numbers, quotientss)
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if len(quotients1) != 2 || len(quotients2) != 2 {
+		t.Error("not all channels got responses")
+	}
+
+	for r := range quotients1 {
+		if r.Quo != 3 || r.Rem != 1 {
+			t.Error("wrong result")
+		}
+	}
+	for r := range quotients2 {
+		if r.Quo != 3 || r.Rem != 1 {
+			t.Error("wrong result")
+		}
+	}
+
+}
+
+func TestMultiStreamErrors(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	s := NewServer(h1, "rpc")
+	s2 := NewServer(h2, "rpc")
+	c := NewClientWithServer(h1, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+	s2.Register(&arith)
+
+	ctxs := make([]context.Context, 2)
+	ctxs[0] = context.Background()
+	ctxs[1] = context.Background()
+
+	dests := make([]peer.ID, 2)
+	dests[0] = h1.ID()
+	dests[1] = h2.ID()
+
+	numbers := make(chan Args, 10)
+	quotientss := make([]interface{}, 2)
+	quotients1 := make(chan Quotient, 10)
+	quotients2 := make(chan Quotient, 10)
+	quotientss[0] = quotients1
+	quotientss[1] = quotients2
+
+	numbers <- Args{10, 0}
+	numbers <- Args{10, 0}
+	close(numbers)
+
+	errs := c.MultiStream(ctxs, dests, "Arith", "DivideMyNumbers", numbers, quotientss)
+	for _, err := range errs {
+		if err == nil {
+			t.Fatal("expected errors")
+		}
+	}
+}
+
+func TestMultiStreamCancel(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	s := NewServer(h1, "rpc")
+	s2 := NewServer(h2, "rpc")
+	c := NewClientWithServer(h1, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+	s2.Register(&arith)
+
+	ctxs := make([]context.Context, 2)
+	var c1, c2 context.CancelFunc
+	ctxs[0], c1 = context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctxs[1], c2 = context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer c1()
+	defer c2()
+
+	dests := make([]peer.ID, 2)
+	dests[0] = h1.ID()
+	dests[1] = h2.ID()
+
+	numbers := make(chan Args, 10)
+	quotientss := make([]interface{}, 2)
+	quotients1 := make(chan Quotient, 10)
+	quotients2 := make(chan Quotient, 10)
+	quotientss[0] = quotients1
+	quotientss[1] = quotients2
+
+	numbers <- Args{10, 2}
+	numbers <- Args{1234, 3}
+	close(numbers)
+
+	errs := c.MultiStream(ctxs, dests, "Arith", "DivideMyNumbers", numbers, quotientss)
+	for i, err := range errs {
+		if err == nil {
+			t.Fatal("expected errors")
+			continue
+		}
+		if err.Error() != ctxs[i].Err().Error() {
+			t.Error("expected context error")
+		}
+	}
+}
+
+// the client cancels the request but does not close the sending channel. Things
+// should return.
+func testStreamClientMisbehave(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
+	s := NewServer(servHost, "rpc")
+	c := NewClientWithServer(clientHost, "rpc", s)
+	var arith Arith
+	arith.ctxTracker = &ctxTracker{}
+	s.Register(&arith)
+	numbers := make(chan Args)
+	quotients := make(chan Quotient, 10)
+
+	go func() {
+		for {
+			numbers <- Args{1234, 5} // slow operation
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	err := c.Stream(ctx, dest, "Arith", "DivideMyNumbers", numbers, quotients)
+	if err == nil {
+		t.Error("expected an error")
+	}
+
+	if err.Error() != ctx.Err().Error() {
+		t.Error("wrong error message")
+	}
+
+	time.Sleep(1000 * time.Millisecond)
+	if !arith.ctxTracker.cancelled() {
+		t.Error("expected ctx cancellation in the function")
+	}
+}
+
+func TestStreamClientMisbehave(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	t.Run("local", func(t *testing.T) {
+		testStreamClientMisbehave(t, h1, h2, h2.ID())
+	})
+
+	t.Run("remote", func(t *testing.T) {
+		testStreamClientMisbehave(t, h1, h2, h1.ID())
+	})
+}
+
+// the server errors but does not cancel the reply channel.
+func testStreamServerMisbehave(t *testing.T, servHost, clientHost host.Host, dest peer.ID) {
+	s := NewServer(servHost, "rpc")
+	c := NewClientWithServer(clientHost, "rpc", s)
+	var arith Arith
+	s.Register(&arith)
+	numbers := make(chan Args, 2)
+	quotients := make(chan Quotient, 10)
+
+	go func() {
+		numbers <- Args{2, 3}
+		numbers <- Args{666, 1} // causes error without closing channel
+		for {
+			numbers <- Args{1234, 5} // slow operation
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	err := c.Stream(context.Background(), dest, "Arith", "DivideMyNumbers", numbers, quotients)
+	if err == nil {
+		t.Error("expected an error")
+	}
+
+	if err.Error() != "bad bad bad" {
+		t.Error("wrong error message")
+	}
+
+}
+
+func TestStreamServerMisbehave(t *testing.T) {
+	h1, h2 := makeRandomNodes()
+	defer h1.Close()
+	defer h2.Close()
+
+	t.Run("local", func(t *testing.T) {
+		testStreamServerMisbehave(t, h1, h2, h2.ID())
+	})
+
+	t.Run("remote", func(t *testing.T) {
+		testStreamServerMisbehave(t, h1, h2, h1.ID())
 	})
 }

@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"bufio"
+	"io"
 
 	"github.com/libp2p/go-libp2p-core/network"
 
@@ -15,6 +16,7 @@ type streamWrap struct {
 	stream network.Stream
 	enc    *codec.Encoder
 	dec    *codec.Decoder
+	limDec *codec.Decoder
 	w      *bufio.Writer
 	r      *bufio.Reader
 }
@@ -29,6 +31,7 @@ func wrapStream(s network.Stream) *streamWrap {
 	writer := bufio.NewWriter(s)
 	h := &codec.MsgpackHandle{}
 	dec := codec.NewDecoder(reader, h)
+	limDec := codec.NewDecoder(&io.LimitedReader{R: reader, N: MaxServiceIDLength + 30}, h)
 	enc := codec.NewEncoder(writer, h)
 	return &streamWrap{
 		stream: s,
@@ -36,6 +39,7 @@ func wrapStream(s network.Stream) *streamWrap {
 		w:      writer,
 		enc:    enc,
 		dec:    dec,
+		limDec: limDec,
 	}
 
 }

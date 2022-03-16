@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"reflect"
 	"sync"
 
 	"github.com/libp2p/go-libp2p-core/network"
@@ -18,17 +19,32 @@ type Call struct {
 	finishedMu sync.RWMutex
 	finished   bool
 
-	Dest  peer.ID
-	SvcID ServiceID   // The name of the service and method to call.
-	Args  interface{} // The argument to the function (*struct).
-	Reply interface{} // The reply from the function (*struct).
-	Done  chan *Call  // Strobes when call is complete.
+	Dest          peer.ID
+	SvcID         ServiceID     // The name of the service and method to call.
+	Args          interface{}   // The argument to the function.
+	Reply         interface{}   // The reply from the function.
+	StreamArgs    reflect.Value // streaming objects (channel).
+	StreamReplies reflect.Value // streaming replies (channel).
+	Done          chan *Call    // Strobes when call is complete.
 
 	errorMu sync.Mutex
 	Error   error // After completion, the error status.
 }
 
-func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args interface{}, reply interface{}, done chan *Call) *Call {
+// newCall panics if arguments are not as expected.
+func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) *Call {
+	if !isExportedOrBuiltinType(reflect.TypeOf(args)) {
+		panic("method argument is not exported or builtin")
+	}
+
+	if !isExportedOrBuiltinType(reflect.TypeOf(args)) {
+		panic("method reply argument is not exported or builtin")
+	}
+
+	if reply == nil || reflect.TypeOf(reply).Kind() != reflect.Ptr {
+		panic("reply type must be a pointer to a type")
+	}
+
 	ctx2, cancel := context.WithCancel(ctx)
 	return &Call{
 		ctx:    ctx2,
@@ -42,6 +58,45 @@ func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args 
 	}
 }
 
+// newStreamingCall panics if arguments are not as expected.
+func newStreamingCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, streamArgs, streamReplies reflect.Value, done chan *Call) *Call {
+	if streamArgs.Kind() != reflect.Chan {
+		panic("argument type must be a channel")
+	}
+
+	if streamArgs.Type().ChanDir()&reflect.RecvDir == 0 {
+		panic("argument channel has wrong channel direction (needs Receive direction)")
+	}
+
+	if !isExportedOrBuiltinType(streamArgs.Type().Elem()) {
+		panic("arguments channel type is not exported or builtin")
+	}
+
+	if streamReplies.Kind() != reflect.Chan {
+		panic("reply type must be a channel")
+	}
+
+	if streamReplies.Type().ChanDir()&reflect.SendDir == 0 {
+		panic("reply channel has wrong channel direction (needs Send direction)")
+	}
+
+	if !isExportedOrBuiltinType(streamReplies.Type().Elem()) {
+		panic("replies channel type is not exported or builtin")
+	}
+
+	ctx2, cancel := context.WithCancel(ctx)
+	return &Call{
+		ctx:           ctx2,
+		cancel:        cancel,
+		Dest:          dest,
+		SvcID:         ServiceID{svcName, svcMethod},
+		StreamArgs:    streamArgs,
+		StreamReplies: streamReplies,
+		Error:         nil,
+		Done:          done,
+	}
+}
+
 // done places the completed call in the done channel.
 func (call *Call) done() {
 	call.finishedMu.Lock()
@@ -52,8 +107,7 @@ func (call *Call) done() {
 	case call.Done <- call:
 		// ok
 	default:
-		logger.Debugf("discarding %s.%s call reply",
-			call.SvcID.Name, call.SvcID.Method)
+		logger.Debugf("discarding %s call reply", call.SvcID)
 	}
 	call.cancel()
 }
@@ -79,7 +133,10 @@ func (call *Call) watchContextWithStream(s network.Stream) {
 	if !call.isFinished() { // context was cancelled not by us
 		logger.Debug("call context is done before finishing")
 		call.doneWithError(call.ctx.Err())
-		s.Close()
+		// This used to be s.Close() But for streaming we definitely
+		// need to signal an abnormal finalization of the call when a
+		// context is cancelled.
+		s.Reset()
 	}
 }
 

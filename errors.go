@@ -2,20 +2,20 @@ package rpc
 
 import "errors"
 
-// responseErr is an enum type for providing error type
+// ErrorType is an enum type for providing error type
 // information over the wire between rpc server and client.
-type responseErr int
+type ErrorType int
 
 const (
-	// nonRPCErr is an error that hasn't arisen from the gorpc package.
-	nonRPCErr responseErr = iota
-	// serverErr is an error that has arisen on the server side.
-	serverErr
-	// clientErr is an error that has arisen on the client side.
-	clientErr
-	// authorizationErr is an error that has arisen because client doesn't
+	// NonRPCErr is an error that hasn't arisen from the gorpc package.
+	NonRPCErr ErrorType = iota
+	// ServerErr is an error that has arisen on the server side.
+	ServerErr
+	// ClientErr is an error that has arisen on the client side.
+	ClientErr
+	// AuthorizationErr is an error that has arisen because client doesn't
 	// have permissions to make the given rpc request
-	authorizationErr
+	AuthorizationErr
 )
 
 // serverError indicates that error originated in server
@@ -65,13 +65,13 @@ func newAuthorizationError(err error) error {
 
 // responseError converts an responseErr and error message string
 // into the appropriate error type.
-func responseError(errType responseErr, errMsg string) error {
+func responseError(errType ErrorType, errMsg string) error {
 	switch errType {
-	case serverErr:
+	case ServerErr:
 		return &serverError{errMsg}
-	case clientErr:
+	case ClientErr:
 		return &clientError{errMsg}
-	case authorizationErr:
+	case AuthorizationErr:
 		return &authorizationError{errMsg}
 	default:
 		return errors.New(errMsg)
@@ -81,16 +81,16 @@ func responseError(errType responseErr, errMsg string) error {
 // responseErrorType determines whether an error is of either
 // serverError or clientError type and returns the appropriate
 // responseErr value.
-func responseErrorType(err error) responseErr {
+func responseErrorType(err error) ErrorType {
 	switch err.(type) {
 	case *serverError:
-		return serverErr
+		return ServerErr
 	case *clientError:
-		return clientErr
+		return ClientErr
 	case *authorizationError:
-		return authorizationErr
+		return AuthorizationErr
 	default:
-		return nonRPCErr
+		return NonRPCErr
 	}
 }
 
@@ -107,15 +107,15 @@ func IsRPCError(err error) bool {
 
 // IsServerError returns whether an error is serverError.
 func IsServerError(err error) bool {
-	return responseErrorType(err) == serverErr
+	return responseErrorType(err) == ServerErr
 }
 
 // IsClientError returns whether an error is clientError.
 func IsClientError(err error) bool {
-	return responseErrorType(err) == clientErr
+	return responseErrorType(err) == ClientErr
 }
 
 // IsAuthorizationError returns whether an error is authorizationError.
 func IsAuthorizationError(err error) bool {
-	return responseErrorType(err) == authorizationErr
+	return responseErrorType(err) == AuthorizationErr
 }
