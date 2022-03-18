@@ -1,12 +1,12 @@
 // Package rpc is heavily inspired by Go standard net/rpc package. It aims to
-// do the same thing, except it uses Libp2p for communication and provides
+// do the same thing, except it uses libp2p for communication and provides
 // context support for cancelling operations.
 //
-// A server registers an object, making it visible as a service with the name of
-// the type of the object.  After registration, exported methods of the object
-// will be accessible remotely.  A server may register multiple objects
-// (services) of different types but it is an error to register multiple objects
-// of the same type.
+// A server registers an object, making it visible as a service with the name
+// of the type of the object. After registration, exported methods of the
+// object will be accessible remotely.  A server may register multiple objects
+// (services) of different types but it is an error to register multiple
+// objects of the same type.
 //
 // Only methods that satisfy these criteria will be made available for remote
 // access; other methods will be ignored:
@@ -14,29 +14,39 @@
 // 	- the method is exported.
 // 	- the method has 3 arguments.
 // 	- the method's first argument is a context.
-// 	- the method's second are third arguments are both exported (or builtin) types.
-// 	- the method's second argument is a pointer.
+// 	- For normal methods:
+// 	  - the method's second and third arguments are both exported (or builtin) types.
+// 	  - the method's second argument is a pointer.
+// 	- For "streaming" methods:
+// 	  - the method's second argument is a receiving channel (<-chan) of exported (or builtin) type.
+// 	  - the method's third argument is a sending channel (chan<-) of exported (or builtin) type.
 // 	- the method has return type error.
+//
 //
 // In effect, the method must look schematically like
 //
 // 	func (t *T) MethodName(ctx context.Context, argType T1, replyType *T2) error
+//      or
+// 	func (t *T) MethodName(ctx context.Context, argChan <-chan T1, replyChan chan<- T2) error
 //
-// where T1 and T2 can be marshaled by encoding/gob.
+// where T1 and T2 can be marshaled by github.com/ugorji/go/codec.
 //
-// The method's first argument represents the arguments provided by the caller;
-// the second argument represents the result parameters to be returned to the
-// caller.  The method's return value, if non-nil, is passed back as a string
-// that the client sees as if created by errors.New.  If an error is returned,
-// the reply parameter may not be sent back to the client.
+// In normal calls, the method's second argument represents the arguments
+// provided by the caller; the third argument represents the result
+// parameters to be returned to the caller. The function error response is
+// passed to the client accordingly.
 //
-// In order to use this package, a ready-to-go LibP2P Host must be provided
+// In streaming calls, the method's second and third arguments are argument
+// and replies channels. The method is expected to read from the argument
+// channel until it is closed. The method is expected to send responses on the
+// replies channel and close it when done. Both channels are transparently and
+// asynchronously streamed on the wire between remote hosts.
+//
+// In order to use this package, a ready-to-go libp2p Host must be provided
 // to clients and servers, along with a protocol.ID. rpc will add a stream
-// handler for the given protocol. Hosts must be ready to speak to clients,
-// that is, peers must be part of the peerstore along with keys if secio
-// communication is required.
+// handler for the given protocol.
 //
-// Since version 2.0.0, contexts are supported and honored. On the server side,
+// Contexts are supported and honored when provided. On the server side,
 // methods must take a context. A closure or reset of the libp2p stream will
 // trigger a cancellation of the context received by the functions.
 // On the client side, the user can optionally provide a context.
@@ -49,7 +59,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"reflect"
 	"sync"
 	"time"
@@ -71,6 +80,10 @@ type ContextKey string
 const (
 	// ContextKeyRequestSender is default key for RPC service function context to retrieve peer ID of current request sender
 	ContextKeyRequestSender = ContextKey("request_sender")
+	// MaxServiceIDLength specifies a maximum length for the
+	// "ServiceName.MethodName" so that an attacker cannot send an
+	// arbitrarily large ServiceID.
+	MaxServiceIDLength = 256
 )
 
 var logger = logging.Logger("p2p-gorpc")
@@ -80,9 +93,11 @@ var logger = logging.Logger("p2p-gorpc")
 var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
 
 type methodType struct {
-	method    reflect.Method
-	ArgType   reflect.Type
-	ReplyType reflect.Type
+	method         reflect.Method
+	ArgType        reflect.Type
+	streamingArg   bool
+	ReplyType      reflect.Type
+	streamingReply bool
 }
 
 // service stores information about a service (which is a pointer to a
@@ -101,12 +116,21 @@ type ServiceID struct {
 	Method string
 }
 
-// Response is a header sent when responding to an RPC
-// request which includes any error that may have happened.
+// String concatenates ServiceID name and method.
+func (svcID ServiceID) String() string {
+	return svcID.Name + "." + svcID.Method
+}
+
+// Response wraps all elements necessary to reply to a call: Service ID, Error
+// and data. Responses are written to the wire in two steps. First the
+// response object (without the data), then the data object.  In streaming
+// calls, each reply object is prepended by a Response object, which should be
+// fully empty unless there is an error.
 type Response struct {
-	Service ServiceID
-	Error   string // error, if any.
-	ErrType responseErr
+	Service ServiceID   `codec:",omitempty"`
+	Error   string      `codec:",omitempty"` // error, if any.
+	ErrType ErrorType   `codec:",omitempty"`
+	Data    interface{} `codec:"-"` // Response data
 }
 
 // AuthorizeWithMap returns an authrorization function that follows the
@@ -142,6 +166,13 @@ func WithServerStatsHandler(h stats.Handler) ServerOption {
 	}
 }
 
+// WithStreamBufferSize sets the channel buffer size for streaming requests.
+func WithStreamBufferSize(size int) ServerOption {
+	return func(s *Server) {
+		s.streamBufferSize = size
+	}
+}
+
 // Server is an LibP2P RPC server. It can register services which comply to the
 // limitations outlined in the package description and it will call the relevant
 // methods when receiving requests from a Client.
@@ -150,9 +181,11 @@ func WithServerStatsHandler(h stats.Handler) ServerOption {
 // by the client. The LibP2P host must be already correctly configured to
 // be able to handle connections from clients.
 type Server struct {
-	host         host.Host
-	protocol     protocol.ID
-	statsHandler stats.Handler
+	host     host.Host
+	protocol protocol.ID
+
+	statsHandler     stats.Handler
+	streamBufferSize int
 
 	mu         sync.RWMutex // protects the serviceMap
 	serviceMap map[string]*service
@@ -178,12 +211,7 @@ func NewServer(h host.Host, p protocol.ID, opts ...ServerOption) *Server {
 		h.SetStreamHandler(p, func(stream network.Stream) {
 			sWrap := wrapStream(stream)
 			defer stream.Close()
-			err := s.handle(sWrap)
-			if err != nil {
-				logger.Error("error handling RPC:", err)
-				resp := &Response{ServiceID{}, err.Error(), responseErrorType(err)}
-				sendResponse(sWrap, resp, nil)
-			}
+			s.handle(sWrap)
 		})
 	}
 	return s
@@ -197,21 +225,23 @@ func (server *Server) ID() peer.ID {
 	return server.host.ID()
 }
 
-func (server *Server) handle(s *streamWrap) error {
+func (server *Server) handle(s *streamWrap) {
 	logger.Debugf("%s: handling remote RPC from %s", server.host.ID().Pretty(), s.stream.Conn().RemotePeer())
-	var err error
 	var svcID ServiceID
-	var argv, replyv reflect.Value
 	ctx := context.Background()
 
-	err = s.dec.Decode(&svcID)
+	// First, read the header which tells us which service we are hoping
+	// to run.  Using limDec so that a client does not potentially DDOS us
+	// with a huge header for what ends up being an unauthorized method.
+	err := s.dec.Decode(&svcID)
 	if err != nil {
-		return newServerError(err)
+		sendError(s, ServiceID{}, newServerError(fmt.Errorf("error reading service ID: %w", err)))
 	}
 
+	// stats ----------------------
 	sh := server.statsHandler
 	if sh != nil {
-		ctx = sh.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/" + svcID.Name + "/" + svcID.Method})
+		ctx = sh.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/" + svcID.String()})
 		beginTime := time.Now()
 		begin := &stats.Begin{
 			BeginTime: beginTime,
@@ -229,40 +259,53 @@ func (server *Server) handle(s *streamWrap) error {
 			sh.HandleRPC(ctx, end)
 		}()
 	}
+	// stats end -------------------------
 
-	logger.Debugf("RPC ServiceID is %s.%s", svcID.Name, svcID.Method)
+	logger.Debugf("RPC ServiceID is %s", svcID)
 
+	// The service needs to have been registered with us.
 	service, mtype, err := server.getService(svcID)
 	if err != nil {
-		return newServerError(err)
+		sendError(s, svcID, newServerError(err))
+		return
 	}
 
-	if server.authorize != nil && !server.authorize(s.stream.Conn().RemotePeer(), svcID.Name, svcID.Method) {
-		errMsg := fmt.Sprintf("client does not have permissions to this method, service name: %s, method name: %s", svcID.Name, svcID.Method)
-		return newAuthorizationError(errors.New(errMsg))
+	// Ensure the remote peer has permission to run  this by calling authorize().
+	remotePeer := s.stream.Conn().RemotePeer()
+	if server.authorize != nil && !server.authorize(remotePeer, svcID.Name, svcID.Method) {
+		errMsg := fmt.Sprintf("client does not have permissions to call %s", svcID)
+		sendError(s, svcID, newAuthorizationError(errors.New(errMsg)))
+		return
+	}
+	// Right now both must be true or false, which is checked somewhere
+	// else.
+	if mtype.streamingArg || mtype.streamingReply {
+		service.streamCall(ctx, s, mtype, svcID, server.streamBufferSize)
+		return
 	}
 
-	// Decode the argument value.
-	argIsValue := false // if true, need to indirect before calling.
-	if mtype.ArgType.Kind() == reflect.Ptr {
-		argv = reflect.New(mtype.ArgType.Elem())
-	} else {
-		argv = reflect.New(mtype.ArgType)
-		argIsValue = true
+	err = service.methodCall(ctx, s, mtype, svcID)
+	if err != nil {
+		logger.Warning(err)
+		sendError(s, svcID, err)
+		return
 	}
-	// argv guaranteed to be a pointer now.
-	if err = s.dec.Decode(argv.Interface()); err != nil {
-		return newServerError(err)
-	}
-	if argIsValue {
-		argv = argv.Elem()
-	}
+}
 
-	replyv = reflect.New(mtype.ReplyType.Elem())
-
-	ctx = context.WithValue(ctx, ContextKeyRequestSender, s.stream.Conn().RemotePeer())
+// Call a method by reading a single argument from the wire and return the
+// response.
+func (s *service) methodCall(ctx context.Context, sw *streamWrap, mtype *methodType, svcID ServiceID) error {
+	ctx = context.WithValue(ctx, ContextKeyRequestSender, sw.stream.Conn().RemotePeer())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	argv, err := readArgFromStream(sw, mtype.ArgType)
+	if err != nil {
+		return err
+	}
+
+	// Replies are always pointers, so need Elem() to get the value.
+	replyv := reflect.New(mtype.ReplyType.Elem())
 
 	ctxv := reflect.ValueOf(ctx)
 
@@ -283,20 +326,13 @@ func (server *Server) handle(s *streamWrap) error {
 	// on our side.
 	go func() {
 		p := make([]byte, 1)
-		_, err := s.stream.Read(p)
+		_, err := sw.stream.Read(p)
 		if err != nil {
 			cancel()
 		}
 	}()
 
-	// Call service and respond
-	return service.svcCall(s, mtype, svcID, ctxv, argv, replyv)
-}
-
-// svcCall calls the actual method associated
-func (s *service) svcCall(sWrap *streamWrap, mtype *methodType, svcID ServiceID, ctxv, argv, replyv reflect.Value) error {
 	function := mtype.method.Func
-
 	// Invoke the method, providing a new value for the reply.
 	returnValues := function.Call([]reflect.Value{s.rcvr, ctxv, argv, replyv})
 	// The return value for the method is an error.
@@ -305,40 +341,223 @@ func (s *service) svcCall(sWrap *streamWrap, mtype *methodType, svcID ServiceID,
 	if errInter != nil {
 		errmsg = errInter.(error).Error()
 	}
-	resp := &Response{svcID, errmsg, nonRPCErr}
+	resp := Response{svcID, errmsg, NonRPCErr, replyv.Interface()}
 
-	return sendResponse(sWrap, resp, replyv.Interface())
+	return sendResponse(sw, resp)
 }
 
-func sendResponse(s *streamWrap, resp *Response, body interface{}) error {
+func (s *service) streamCall(ctx context.Context, sw *streamWrap, mtype *methodType, svcID ServiceID, size int) {
+	ctx = context.WithValue(ctx, ContextKeyRequestSender, sw.stream.Conn().RemotePeer())
+	ctx, cancel := context.WithCancel(ctx)
+
+	// we will need a goroutine that reads from the stream and decodes on
+	// mtype.ArgTypes and sends them on channel. And we will need
+	// goroutine that reads mtype.ReplyType replies, wraps themencodes them and
+	// writes them to the stream.
+
+	// Then we will need to call the things.
+	argsChan := reflect.MakeChan(reflect.ChanOf(reflect.BothDir, mtype.ArgType), size)
+	repliesChan := reflect.MakeChan(reflect.ChanOf(reflect.BothDir, mtype.ReplyType), size)
+	ctxv := reflect.ValueOf(ctx)
+	done := reflect.ValueOf(ctx.Done())
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	// Read from stream
+	go func() {
+		defer wg.Done()
+		// when done, close stream for reading.
+		defer sw.stream.CloseRead()
+
+		for {
+			// This ensures that we don't attempt to read if the
+			// context is cancelled.
+			select {
+			case <-ctx.Done():
+				logger.Warningf("%s: reading arguments cancelled: %s", svcID, ctx.Err())
+				argsChan.Close()
+				return
+			default:
+			}
+
+			argv, err := readArgFromStream(sw, mtype.ArgType)
+			if err == io.EOF { // stream closed, no more to read.
+				argsChan.Close()
+				return
+			} else if err != nil { // abort
+				logger.Warning(err)
+				cancel() // signal everyone to abort.
+				argsChan.Close()
+				return
+			}
+
+			// This ensures that we don't deadlock on send when
+			// there is no one receiving if the context is
+			// cancelled.
+			chosen, _, _ := reflect.Select([]reflect.SelectCase{
+				{
+					Dir:  reflect.SelectRecv,
+					Chan: done, // chan done
+				},
+				{
+					Dir:  reflect.SelectSend,
+					Chan: argsChan,
+					Send: argv,
+				},
+			})
+			if chosen == 0 {
+				logger.Warningf("%s: reading arguments cancelled: %s", svcID, ctx.Err())
+				argsChan.Close()
+				return
+			}
+		}
+	}()
+
+	// Read from replies
+	go func() {
+		defer wg.Done()
+
+		for {
+			// This ensures that we don't deadlock on reading
+			// replies if they are not sent and the context is
+			// cancelled.
+			chosen, v, ok := reflect.Select([]reflect.SelectCase{
+				{
+					Dir:  reflect.SelectRecv,
+					Chan: done, // chan done
+				},
+				{
+					Dir:  reflect.SelectRecv,
+					Chan: repliesChan,
+				},
+			})
+
+			if chosen == 0 { // context cancelled
+				logger.Warningf("%s: reading replies cancelled: %s", svcID, ctx.Err())
+				go drainChannel(repliesChan)
+				return
+			}
+
+			if !ok { // repliesChanClosed
+				logger.Debugf("%s: reply channel closed", svcID)
+				return
+			}
+
+			// This ensures that we don't attempt to send a reply
+			// on the wire if the context is cancelled.
+			select {
+			case <-ctx.Done():
+				logger.Warningf("%s: reading replies cancelled: %s", svcID, ctx.Err())
+				go drainChannel(repliesChan)
+				return
+			default:
+			}
+
+			err := sendResponse(sw, Response{
+				Service: svcID,
+				Data:    v.Interface(),
+			})
+			if err != nil {
+				logger.Warning(err)
+				cancel() // signal everyone to abort
+				go drainChannel(repliesChan)
+				return
+			}
+		}
+	}()
+
+	// Finally, we need to call the actual function
+	function := mtype.method.Func
+	// Invoke the method, providing a new value for the reply.  This
+	// hangs. The function will do its job. The only way we can signal
+	// that it should stop doings its job is by cancelling ctxv or by closing argsChan.
+	returnValues := function.Call([]reflect.Value{s.rcvr, ctxv, argsChan, repliesChan})
+	errInter := returnValues[0].Interface()
+	if errInter != nil {
+		cancel()
+		wg.Wait()
+		err := errInter.(error)
+		logger.Debugf("%s: attempt to send error: %s", svcID, err)
+		sendError(sw, svcID, err)
+		sw.stream.Close()
+		return
+	}
+
+	logger.Debugf("%s function call finished cleanly", svcID)
+
+	// This means everything went well, OR an error happened with the
+	// stream, the receiving or sending goroutines Reseted it, closed the
+	// arguments channel and the function exited cleanly. In this case the
+	// sending site may have received a stream reset at least, and we
+	// should have logged something.
+	wg.Wait() // wait for things to exist cleanly if they haven't
+	sw.stream.Close()
+	cancel()
+}
+
+func readArgFromStream(sw *streamWrap, argType reflect.Type) (reflect.Value, error) {
+	var argv reflect.Value
+	argIsValue := false
+
+	if argType.Kind() == reflect.Ptr {
+		argv = reflect.New(argType.Elem())
+	} else {
+		argv = reflect.New(argType) // pointer to ArgType
+		argIsValue = true
+	}
+	// argv guaranteed to be a pointer now, so we can decode on top.
+	if err := sw.dec.Decode(argv.Interface()); err != nil {
+		if err == io.EOF {
+			return reflect.ValueOf(nil), err
+		}
+		return argv, newServerError(err)
+	}
+	if argIsValue {
+		argv = argv.Elem()
+	}
+	return argv, nil
+}
+
+// sendResponse sends a Response by first serializing the Response object and
+// then serializing the Response.Data object directly.
+func sendResponse(s *streamWrap, resp Response) error {
 	if err := s.enc.Encode(resp); err != nil {
-		logger.Error("error encoding response:", err)
 		s.stream.Reset()
-		return err
+		return fmt.Errorf("error encoding response: %w", err)
 	}
-	if err := s.enc.Encode(body); err != nil {
-		logger.Error("error encoding body:", err)
+
+	if err := s.enc.Encode(resp.Data); err != nil {
 		s.stream.Reset()
-		return err
+		return fmt.Errorf("error encoding body: %w", err)
 	}
+
 	if err := s.w.Flush(); err != nil {
-		logger.Debug("error flushing response:", err)
 		s.stream.Reset()
-		return err
+		return fmt.Errorf("error flushing response/body: %w", err)
 	}
 	return nil
 }
 
+func sendError(s *streamWrap, svcID ServiceID, err error) error {
+	return sendResponse(s, Response{
+		Service: svcID,
+		Error:   err.Error(),
+		ErrType: responseErrorType(err),
+		Data:    nil,
+	})
+}
+
 // Call allows a server to process a Call directly and act like a client
-// to itself. This is mostly useful because LibP2P does not allow to
+// to itself. This is mostly useful because libp2p does not allow to
 // create streams between a server and a client which share the same
 // host. See NewClientWithServer() for more info.
-func (server *Server) Call(call *Call) error {
+func (server *Server) serverCall(call *Call) error {
 	var err error
 
+	// metrics ---------------------------------------
 	sh := server.statsHandler
 	if sh != nil {
-		call.ctx = sh.TagRPC(call.ctx, &stats.RPCTagInfo{FullMethodName: "/" + call.SvcID.Name + "/" + call.SvcID.Method})
+		call.ctx = sh.TagRPC(call.ctx, &stats.RPCTagInfo{FullMethodName: "/" + call.SvcID.String()})
 		beginTime := time.Now()
 		begin := &stats.Begin{
 			BeginTime: beginTime,
@@ -362,6 +581,7 @@ func (server *Server) Call(call *Call) error {
 			sh.HandleRPC(call.ctx, end)
 		}()
 	}
+	// metrics -----------------------------------------------
 
 	var argv, replyv reflect.Value
 	service, mtype, err := server.getService(call.SvcID)
@@ -378,21 +598,13 @@ func (server *Server) Call(call *Call) error {
 	argIsValue := false // if true, need to indirect before calling.
 	if mtype.ArgType.Kind() == reflect.Ptr {
 		if reflect.TypeOf(call.Args).Kind() != reflect.Ptr {
-			return fmt.Errorf(
-				"%s.%s is being called with the wrong arg type",
-				call.SvcID.Name,
-				call.SvcID.Method,
-			)
+			return fmt.Errorf("%s is being called with the wrong arg type", call.SvcID)
 		}
 		argv = reflect.New(mtype.ArgType.Elem())
 		argv.Elem().Set(reflect.ValueOf(call.Args).Elem())
 	} else {
 		if reflect.TypeOf(call.Args).Kind() == reflect.Ptr {
-			return fmt.Errorf(
-				"%s.%s is being called with the wrong arg type",
-				call.SvcID.Name,
-				call.SvcID.Method,
-			)
+			return fmt.Errorf("%s is being called with the wrong arg type", call.SvcID)
 		}
 		argv = reflect.New(mtype.ArgType)
 		argv.Elem().Set(reflect.ValueOf(call.Args))
@@ -430,6 +642,45 @@ func (server *Server) Call(call *Call) error {
 	return nil
 }
 
+// Stream allows a server to process a streaming Call directly and act like a
+// client to itself. This is mostly useful because libp2p does not allow to
+// create streams between a server and a client which share the same host. See
+// NewClientWithServer() for more info.
+func (server *Server) serverStream(call *Call) error {
+	service, mtype, err := server.getService(call.SvcID)
+	if err != nil {
+		return newServerError(err)
+	}
+
+	ctx := context.WithValue(call.ctx, ContextKeyRequestSender, server.ID()) // add local peer id as request sender
+
+	if !mtype.streamingArg || !mtype.streamingReply {
+		return fmt.Errorf("%s is not a streaming method", call.SvcID)
+	}
+
+	if call.StreamArgs.Type().Elem() != mtype.ArgType {
+		return fmt.Errorf("%s send channel is of wrong type", call.SvcID)
+	}
+
+	if call.StreamReplies.Type().Elem() != mtype.ReplyType {
+		return fmt.Errorf("%s receive channel is of wrong type", call.SvcID)
+	}
+
+	// This is easier than streaming as we can just plug the calls arguments
+	// into the function and let it deal with it.
+	ctxv := reflect.ValueOf(ctx)
+
+	function := mtype.method.Func
+	returnValues := function.Call([]reflect.Value{service.rcvr, ctxv, call.StreamArgs, call.StreamReplies})
+
+	// The return value for the method is an error.
+	errInter := returnValues[0].Interface()
+	if errInter != nil {
+		return errInter.(error)
+	}
+	return nil
+}
+
 func (server *Server) getService(id ServiceID) (*service, *methodType, error) {
 	// Look up the request.
 	server.mu.RLock()
@@ -445,6 +696,14 @@ func (server *Server) getService(id ServiceID) (*service, *methodType, error) {
 		return nil, nil, newServerError(err)
 	}
 	return service, mtype, nil
+}
+
+func drainChannel(ch reflect.Value) {
+	for {
+		if _, ok := ch.Recv(); !ok {
+			return
+		}
+	}
 }
 
 // All code below is provided under:
@@ -470,9 +729,10 @@ func isExportedOrBuiltinType(t reflect.Type) bool {
 // Register publishes in the server the set of methods of the
 // receiver value that satisfy the following conditions:
 //	- exported method of exported type
-//	- two arguments, both of exported type
-//	- the second argument is a pointer
-//	- one return value, of type error
+//      - context as first argument
+//	- input as second argument: exported type or channel of exported type
+//	- output as third argument: a pointer to a exported type, or a channel of exported type
+//	- one return value, of type error.
 // It returns an error if the receiver is not an exported type or has
 // no suitable methods. It also logs the error using package log.
 // The client accesses each method using a string of the form "Type.Method",
@@ -502,12 +762,12 @@ func (server *Server) register(rcvr interface{}, name string, useName bool) erro
 	}
 	if sname == "" {
 		s := "rpc.Register: no service name for type " + s.typ.String()
-		log.Print(s)
+		logger.Error(s)
 		return errors.New(s)
 	}
 	if !isExported(sname) && !useName {
 		s := "rpc.Register: type " + sname + " is not exported"
-		log.Print(s)
+		logger.Error(s)
 		return errors.New(s)
 	}
 	if _, present := server.serviceMap[sname]; present {
@@ -516,19 +776,19 @@ func (server *Server) register(rcvr interface{}, name string, useName bool) erro
 	s.name = sname
 
 	// Install the methods
-	s.method = suitableMethods(s.typ, true)
+	s.method = suitableMethods(s.name, s.typ, true)
 
 	if len(s.method) == 0 {
 		str := ""
 
 		// To help the user, see if a pointer receiver would work.
-		method := suitableMethods(reflect.PtrTo(s.typ), false)
+		method := suitableMethods(s.name, reflect.PtrTo(s.typ), false)
 		if len(method) != 0 {
 			str = "rpc.Register: type " + sname + " has no exported methods of suitable type (hint: pass a pointer to value of that type)"
 		} else {
 			str = "rpc.Register: type " + sname + " has no exported methods of suitable type"
 		}
-		log.Print(str)
+		logger.Error(str)
 		return errors.New(str)
 	}
 	server.serviceMap[s.name] = s
@@ -537,7 +797,7 @@ func (server *Server) register(rcvr interface{}, name string, useName bool) erro
 
 // suitableMethods returns suitable Rpc methods of typ, it will report
 // error using log if reportErr is true.
-func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
+func suitableMethods(sname string, typ reflect.Type, reportErr bool) map[string]*methodType {
 	methods := make(map[string]*methodType)
 	for m := 0; m < typ.NumMethod(); m++ {
 		method := typ.Method(m)
@@ -550,7 +810,7 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 		// Method needs four ins: receiver, context.Context, *args, *reply.
 		if mtype.NumIn() != 4 {
 			if reportErr {
-				log.Println("method", mname, "has wrong number of ins:", mtype.NumIn())
+				logger.Error("method ", mname, " has wrong number of ins: ", mtype.NumIn())
 			}
 			continue
 		}
@@ -560,49 +820,112 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 		ctxIntType := reflect.TypeOf((*context.Context)(nil)).Elem()
 		if !ctxType.Implements(ctxIntType) {
 			if reportErr {
-				log.Println(mname, "first argument is not a context.Context:", ctxType)
+				logger.Error(mname, "first argument is not a context.Context: ", ctxType)
 			}
 			continue
 		}
 
-		// Second arg need not be a pointer so that's not checked.
+		// Second arg must be exported or a channel with an exported type.
 		argType := mtype.In(2)
-		if !isExportedOrBuiltinType(argType) {
-			if reportErr {
-				log.Println(mname, "argument type not exported:", argType)
+		argTypeKind := argType.Kind()
+		streamingArg := false
+
+		switch argTypeKind {
+		case reflect.Chan:
+			aElem := argType.Elem()
+			if !isExportedOrBuiltinType(aElem) {
+				if reportErr {
+					logger.Error(mname, " argument channel type not exported: ", aElem)
+				}
+				continue
 			}
-			continue
+			if argType.ChanDir() != reflect.RecvDir {
+				if reportErr {
+					logger.Error("method ", mname, " argument channel is not a receive-only channel")
+				}
+				continue
+			}
+			argType = aElem
+			streamingArg = true
+		default:
+			if !isExportedOrBuiltinType(argType) {
+				if reportErr {
+					logger.Error(mname, " argument type not exported: ", argType)
+				}
+				continue
+			}
 		}
-		// Third arg must be a pointer.
+		// Third arg must be a pointer or a channel with an exported type.
 		replyType := mtype.In(3)
-		if replyType.Kind() != reflect.Ptr {
+		replyTypeKind := replyType.Kind()
+		streamingReply := false
+		switch replyTypeKind {
+		case reflect.Chan:
+			rElem := replyType.Elem()
+			if !isExportedOrBuiltinType(rElem) {
+				if reportErr {
+					logger.Error("method ", mname, " reply channel type not exported: ", rElem)
+				}
+				continue
+			}
+			if replyType.ChanDir() != reflect.SendDir {
+				if reportErr {
+					logger.Error("method ", mname, " reply channel is not a send-only channel")
+				}
+				continue
+			}
+			replyType = rElem
+			streamingReply = true
+		case reflect.Ptr:
+			if !isExportedOrBuiltinType(replyType) {
+				if reportErr {
+					logger.Error("method ", mname, " reply type not exported: ", replyType)
+				}
+				continue
+			}
+		default:
 			if reportErr {
-				log.Println("method", mname, "reply type not a pointer:", replyType)
+				logger.Error("method ", mname, " reply type not a pointer or channel: ", replyType)
 			}
 			continue
 		}
-		// Reply type must be exported.
-		if !isExportedOrBuiltinType(replyType) {
+
+		// If one argument is a streaming argument but not both, then complain
+		if (streamingArg || streamingReply) && streamingArg != streamingReply {
 			if reportErr {
-				log.Println("method", mname, "reply type not exported:", replyType)
+				logger.Error("method ", mname, " argument and reply must both be channels")
 			}
 			continue
 		}
+
 		// Method needs one out.
 		if mtype.NumOut() != 1 {
 			if reportErr {
-				log.Println("method", mname, "has wrong number of outs:", mtype.NumOut())
+				logger.Error("method ", mname, " has wrong number of outs: ", mtype.NumOut())
 			}
 			continue
 		}
 		// The return type of the method must be error.
 		if returnType := mtype.Out(0); returnType != typeOfError {
 			if reportErr {
-				log.Println("method", mname, "returns", returnType.String(), "not error")
+				logger.Error("method ", mname, " returns ", returnType.String(), ", not error")
 			}
 			continue
 		}
-		methods[mname] = &methodType{method: method, ArgType: argType, ReplyType: replyType}
+
+		if len(sname)+len(mname) > MaxServiceIDLength {
+			if reportErr {
+				logger.Error("The service ID ", sname, ".", mname, " is longer than allowed limit: ", MaxServiceIDLength)
+			}
+			continue
+		}
+		methods[mname] = &methodType{
+			method:         method,
+			ArgType:        argType,
+			streamingArg:   streamingArg,
+			ReplyType:      replyType,
+			streamingReply: streamingReply,
+		}
 	}
 	return methods
 }
