@@ -306,69 +306,51 @@ func (c *Client) Stream(
 }
 
 // MultiStream performs parallel Stream() calls to multiple peers using a
-// single source channel for arguments. Replies from each destination are sent
-// on repliesChannels. Errors from each destination are provided in the
+// single arguments channel for arguments and a single replies channel that
+// aggregates all replies. Errors from each destination are provided in the
 // response. Channel types should be exported or builtin, otherwise a panic
 // will be triggered.
 //
-// In order to replicate the argsChan values to several destinations, they are
-// read and put on a new set of channels, each associated to a Stream() call
-// for each of the destinations. These channels are buffered per the
-// WithMultiStreamBufferSize() option. If the buffer is exausted for one
-// destination, streaming to all destinations will pause. Therefore it is
-// recommended to have enough buffering to allow that slower destinations do
-// not delay everyone else.
+// In order to replicate the argsChan values to several destinations and sed
+// the replies into a single channel, intermediary channels for each call are
+// created. These channels are buffered per the WithMultiStreamBufferSize()
+// option. If the buffers is exausted for one of the sending or the receiving
+// channels, the sending or receiving stalls. Therefore it is recommended to
+// have enough buffering to allow that slower destinations do not delay
+// everyone else.
 func (c *Client) MultiStream(
-	ctxs []context.Context,
+	ctx context.Context,
 	dests []peer.ID,
 	svcName, svcMethod string,
 	argsChan interface{},
-	repliesChannels []interface{},
+	repliesChan interface{},
 ) []error {
-	ok := checkMatchingLengths(len(ctxs), len(dests), len(repliesChannels))
-	if !ok {
-		panic("ctxs, dests and replies must match in length")
-	}
-
 	n := len(dests)
+	sID := ServiceID{svcName, svcMethod}
 
-	chanType := reflect.TypeOf(argsChan)
-	if chanType.Kind() != reflect.Chan {
-		panic("argsChan must be a channel")
-	}
-
-	if chanType.ChanDir()&reflect.RecvDir == 0 {
-		panic("argsChan channel has wrong channel direction (needs Receive direction)")
-	}
-
-	if !isExportedOrBuiltinType(chanType.Elem()) {
-		panic("arguments channel type is not exported or builtin")
-	}
-
-	// Make a slice of N channels of the same type as the argsChan. We
-	// will use them for every Stream() call. They are buffered per
-	// multiStreamBufferSize.
-	chanElemType := chanType.Elem()
 	vArgsChan := reflect.ValueOf(argsChan)
-	vArgsChannels := reflect.MakeSlice(reflect.SliceOf(chanType), 0, n)
-	for i := 0; i < n; i++ {
-		vArgsChannels = reflect.Append(
-			vArgsChannels,
-			reflect.MakeChan(
-				reflect.ChanOf(reflect.BothDir, chanElemType),
-				c.multiStreamBufferSize,
-			))
-	}
+	vRepliesChan := reflect.ValueOf(repliesChan)
+	argsChanType := reflect.TypeOf(argsChan)
+	repliesChanType := reflect.TypeOf(repliesChan)
+
+	checkChanTypesValid(sID, vArgsChan, reflect.RecvDir)
+	checkChanTypesValid(sID, vRepliesChan, reflect.SendDir)
+
+	// Make slices of N channels of the same type as the argsChan and
+	// repliesChan. We will use them for every Stream() call. They are
+	// buffered per multiStreamBufferSize.
+	vArgsChannels := makeChanSliceOf(argsChanType, n, c.multiStreamBufferSize)
+	vRepliesChannels := makeChanSliceOf(repliesChanType, n, c.multiStreamBufferSize)
 
 	// Make slices of contexts and cancels. We will use them to cancel
 	// sending to channels when a Stream() call has failed.
 	teeCtxs := make([]context.Context, n)
 	teeCancels := make([]context.CancelFunc, n)
-	for i := range ctxs {
-		teeCtxs[i], teeCancels[i] = context.WithCancel(ctxs[i])
+	for i := 0; i < n; i++ {
+		teeCtxs[i], teeCancels[i] = context.WithCancel(ctx)
 	}
 
-	// To old responses.
+	// To hold responses.
 	errs := make([]error, n)
 
 	var wg sync.WaitGroup
@@ -382,12 +364,12 @@ func (c *Client) MultiStream(
 		go func(i int) {
 			defer wg.Done()
 			err := c.Stream(
-				ctxs[i],
+				ctx,
 				dests[i],
 				svcName,
 				svcMethod,
 				vArgsChannels.Index(i).Interface(),
-				repliesChannels[i],
+				vRepliesChannels.Index(i).Interface(),
 			)
 			errs[i] = err
 			if err != nil {
@@ -457,9 +439,48 @@ func (c *Client) MultiStream(
 		// if we are here argsChan has been closed.
 	}()
 
+	// Third, "multiplex" anything received from the argsChan into the
+	// channels we created.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		// Make a select with N cases (one per channel).
+		cases := make([]reflect.SelectCase, n)
+		for i := range cases {
+			cases[i].Dir = reflect.SelectRecv
+			cases[i].Chan = vRepliesChannels.Index(i)
+		}
+
+		validChannels := n
+		for validChannels > 0 {
+			chosen, v, ok := reflect.Select(cases)
+			if !ok {
+				cases[chosen].Chan = reflect.ValueOf(nil)
+				validChannels--
+				continue
+			}
+			vRepliesChan.Send(v)
+		}
+
+		// Close the response channels.
+		vRepliesChan.Close()
+	}()
+
 	// Wait for everyone to finish.
 	wg.Wait()
 	return errs
+}
+
+func makeChanSliceOf(typ reflect.Type, cap int, buffer int) reflect.Value {
+	chanSlice := reflect.MakeSlice(reflect.SliceOf(typ), 0, cap)
+	for i := 0; i < cap; i++ {
+		chanSlice = reflect.Append(
+			chanSlice,
+			reflect.MakeChan(reflect.ChanOf(reflect.BothDir, typ.Elem()), buffer),
+		)
+	}
+	return chanSlice
 }
 
 // returns true if all arguments are the same number.

@@ -66,29 +66,8 @@ func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args,
 func newStreamingCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, streamArgs, streamReplies reflect.Value, done chan *Call) *Call {
 	sID := ServiceID{svcName, svcMethod}
 
-	if streamArgs.Kind() != reflect.Chan {
-		panic(fmt.Sprintf("%s: argument type must be a channel", sID))
-	}
-
-	if streamArgs.Type().ChanDir()&reflect.RecvDir == 0 {
-		panic(fmt.Sprintf("%s: argument channel has wrong channel direction (needs Receive direction)", sID))
-	}
-
-	if !isExportedOrBuiltinType(streamArgs.Type().Elem()) {
-		panic(fmt.Sprintf("%s: arguments channel type is not exported or builtin", sID))
-	}
-
-	if streamReplies.Kind() != reflect.Chan {
-		panic(fmt.Sprintf("%s: reply type must be a channel", sID))
-	}
-
-	if streamReplies.Type().ChanDir()&reflect.SendDir == 0 {
-		panic(fmt.Sprintf("%s: reply channel has wrong channel direction (needs Send direction)", sID))
-	}
-
-	if !isExportedOrBuiltinType(streamReplies.Type().Elem()) {
-		panic(fmt.Sprintf("%s: replies channel type is not exported or builtin", sID))
-	}
+	checkChanTypesValid(sID, streamArgs, reflect.RecvDir)
+	checkChanTypesValid(sID, streamReplies, reflect.SendDir)
 
 	ctx2, cancel := context.WithCancel(ctx)
 	return &Call{
@@ -158,4 +137,24 @@ func (call *Call) getError() error {
 	call.errorMu.Lock()
 	defer call.errorMu.Unlock()
 	return call.Error
+}
+
+// panics otherwise
+func checkChanTypesValid(sID ServiceID, vChan reflect.Value, dir reflect.ChanDir) {
+	desc := "argument"
+	if dir == reflect.SendDir {
+		desc = "reply"
+	}
+
+	if vChan.Kind() != reflect.Chan {
+		panic(fmt.Sprintf("%s: %s type must be a channel", desc, sID))
+	}
+
+	if vChan.Type().ChanDir()&dir == 0 {
+		panic(fmt.Sprintf("%s: %s channel has wrong channel direction", sID, desc))
+	}
+
+	if !isExportedOrBuiltinType(vChan.Type().Elem()) {
+		panic(fmt.Sprintf("%s: %s channel type is not exported or builtin", sID, desc))
+	}
 }
