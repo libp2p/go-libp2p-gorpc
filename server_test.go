@@ -825,47 +825,34 @@ func TestMultiStream(t *testing.T) {
 	s.Register(&arith)
 	s2.Register(&arith)
 
-	ctxs := make([]context.Context, 2)
-	ctxs[0] = context.Background()
-	ctxs[1] = context.Background()
-
+	ctx := context.Background()
 	dests := make([]peer.ID, 2)
 	dests[0] = h1.ID()
 	dests[1] = h2.ID()
 
 	numbers := make(chan Args, 10)
-	quotientss := make([]interface{}, 2)
-	quotients1 := make(chan Quotient, 10)
-	quotients2 := make(chan Quotient, 10)
-	quotientss[0] = quotients1
-	quotientss[1] = quotients2
+	quotients := make(chan Quotient, 10)
 
 	numbers <- Args{10, 3}
 	numbers <- Args{10, 3}
 	close(numbers)
 
-	errs := c.MultiStream(ctxs, dests, "Arith", "DivideMyNumbers", numbers, quotientss)
+	errs := c.MultiStream(ctx, dests, "Arith", "DivideMyNumbers", numbers, quotients)
 	for _, err := range errs {
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	if len(quotients1) != 2 || len(quotients2) != 2 {
-		t.Error("not all channels got responses")
+	if len(quotients) != 4 {
+		t.Error("not all responses arrived")
 	}
 
-	for r := range quotients1 {
+	for r := range quotients {
 		if r.Quo != 3 || r.Rem != 1 {
 			t.Error("wrong result")
 		}
 	}
-	for r := range quotients2 {
-		if r.Quo != 3 || r.Rem != 1 {
-			t.Error("wrong result")
-		}
-	}
-
 }
 
 func TestMultiStreamErrors(t *testing.T) {
@@ -880,26 +867,19 @@ func TestMultiStreamErrors(t *testing.T) {
 	s.Register(&arith)
 	s2.Register(&arith)
 
-	ctxs := make([]context.Context, 2)
-	ctxs[0] = context.Background()
-	ctxs[1] = context.Background()
-
+	ctx := context.Background()
 	dests := make([]peer.ID, 2)
 	dests[0] = h1.ID()
 	dests[1] = h2.ID()
 
 	numbers := make(chan Args, 10)
-	quotientss := make([]interface{}, 2)
-	quotients1 := make(chan Quotient, 10)
-	quotients2 := make(chan Quotient, 10)
-	quotientss[0] = quotients1
-	quotientss[1] = quotients2
+	quotients := make(chan Quotient, 10)
 
 	numbers <- Args{10, 0}
 	numbers <- Args{10, 0}
 	close(numbers)
 
-	errs := c.MultiStream(ctxs, dests, "Arith", "DivideMyNumbers", numbers, quotientss)
+	errs := c.MultiStream(ctx, dests, "Arith", "DivideMyNumbers", numbers, quotients)
 	for _, err := range errs {
 		if err == nil {
 			t.Fatal("expected errors")
@@ -919,35 +899,26 @@ func TestMultiStreamCancel(t *testing.T) {
 	s.Register(&arith)
 	s2.Register(&arith)
 
-	ctxs := make([]context.Context, 2)
-	var c1, c2 context.CancelFunc
-	ctxs[0], c1 = context.WithTimeout(context.Background(), 500*time.Millisecond)
-	ctxs[1], c2 = context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer c1()
-	defer c2()
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
 
 	dests := make([]peer.ID, 2)
 	dests[0] = h1.ID()
 	dests[1] = h2.ID()
-
 	numbers := make(chan Args, 10)
-	quotientss := make([]interface{}, 2)
-	quotients1 := make(chan Quotient, 10)
-	quotients2 := make(chan Quotient, 10)
-	quotientss[0] = quotients1
-	quotientss[1] = quotients2
+	quotients := make(chan Quotient, 10)
 
 	numbers <- Args{10, 2}
 	numbers <- Args{1234, 3}
 	close(numbers)
 
-	errs := c.MultiStream(ctxs, dests, "Arith", "DivideMyNumbers", numbers, quotientss)
-	for i, err := range errs {
+	errs := c.MultiStream(ctx, dests, "Arith", "DivideMyNumbers", numbers, quotients)
+	for _, err := range errs {
 		if err == nil {
 			t.Fatal("expected errors")
 			continue
 		}
-		if err.Error() != ctxs[i].Err().Error() {
+		if err.Error() != ctx.Err().Error() {
 			t.Error("expected context error")
 		}
 	}
