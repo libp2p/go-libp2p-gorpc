@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sync"
 
@@ -33,16 +34,19 @@ type Call struct {
 
 // newCall panics if arguments are not as expected.
 func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args, reply interface{}, done chan *Call) *Call {
+
+	sID := ServiceID{svcName, svcMethod}
+
 	if !isExportedOrBuiltinType(reflect.TypeOf(args)) {
-		panic("method argument is not exported or builtin")
+		panic(fmt.Sprintf("%s: method argument is not exported or builtin", sID))
 	}
 
 	if !isExportedOrBuiltinType(reflect.TypeOf(args)) {
-		panic("method reply argument is not exported or builtin")
+		panic(fmt.Sprintf("%s: method reply argument is not exported or builtin", sID))
 	}
 
 	if reply == nil || reflect.TypeOf(reply).Kind() != reflect.Ptr {
-		panic("reply type must be a pointer to a type")
+		panic(fmt.Sprintf("%s: reply type must be a pointer to a type", sID))
 	}
 
 	ctx2, cancel := context.WithCancel(ctx)
@@ -50,7 +54,7 @@ func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args,
 		ctx:    ctx2,
 		cancel: cancel,
 		Dest:   dest,
-		SvcID:  ServiceID{svcName, svcMethod},
+		SvcID:  sID,
 		Args:   args,
 		Reply:  reply,
 		Error:  nil,
@@ -60,28 +64,30 @@ func newCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, args,
 
 // newStreamingCall panics if arguments are not as expected.
 func newStreamingCall(ctx context.Context, dest peer.ID, svcName, svcMethod string, streamArgs, streamReplies reflect.Value, done chan *Call) *Call {
+	sID := ServiceID{svcName, svcMethod}
+
 	if streamArgs.Kind() != reflect.Chan {
-		panic("argument type must be a channel")
+		panic(fmt.Sprintf("%s: argument type must be a channel", sID))
 	}
 
 	if streamArgs.Type().ChanDir()&reflect.RecvDir == 0 {
-		panic("argument channel has wrong channel direction (needs Receive direction)")
+		panic(fmt.Sprintf("%s: argument channel has wrong channel direction (needs Receive direction)", sID))
 	}
 
 	if !isExportedOrBuiltinType(streamArgs.Type().Elem()) {
-		panic("arguments channel type is not exported or builtin")
+		panic(fmt.Sprintf("%s: arguments channel type is not exported or builtin", sID))
 	}
 
 	if streamReplies.Kind() != reflect.Chan {
-		panic("reply type must be a channel")
+		panic(fmt.Sprintf("%s: reply type must be a channel", sID))
 	}
 
 	if streamReplies.Type().ChanDir()&reflect.SendDir == 0 {
-		panic("reply channel has wrong channel direction (needs Send direction)")
+		panic(fmt.Sprintf("%s: reply channel has wrong channel direction (needs Send direction)", sID))
 	}
 
 	if !isExportedOrBuiltinType(streamReplies.Type().Elem()) {
-		panic("replies channel type is not exported or builtin")
+		panic(fmt.Sprintf("%s: replies channel type is not exported or builtin", sID))
 	}
 
 	ctx2, cancel := context.WithCancel(ctx)
@@ -89,7 +95,7 @@ func newStreamingCall(ctx context.Context, dest peer.ID, svcName, svcMethod stri
 		ctx:           ctx2,
 		cancel:        cancel,
 		Dest:          dest,
-		SvcID:         ServiceID{svcName, svcMethod},
+		SvcID:         sID,
 		StreamArgs:    streamArgs,
 		StreamReplies: streamReplies,
 		Error:         nil,
