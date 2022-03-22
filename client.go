@@ -629,6 +629,7 @@ func (c *Client) stream(call *Call) {
 	if err != nil {
 		call.doneWithError(newClientError(err))
 		go drainChannel(call.StreamArgs)
+		call.StreamReplies.Close()
 		return
 	}
 
@@ -642,6 +643,7 @@ func (c *Client) stream(call *Call) {
 		call.doneWithError(newClientError(err))
 		s.Reset()
 		go drainChannel(call.StreamArgs)
+		call.StreamReplies.Close()
 		return
 	}
 
@@ -650,6 +652,7 @@ func (c *Client) stream(call *Call) {
 		call.doneWithError(newClientError(err))
 		s.Reset()
 		go drainChannel(call.StreamArgs)
+		call.StreamReplies.Close()
 		return
 	}
 
