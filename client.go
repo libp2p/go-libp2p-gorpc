@@ -473,7 +473,7 @@ func (c *Client) MultiStream(
 }
 
 func makeChanSliceOf(typ reflect.Type, cap int, buffer int) reflect.Value {
-	chanSlice := reflect.MakeSlice(reflect.SliceOf(typ), 0, cap)
+	chanSlice := reflect.MakeSlice(reflect.SliceOf(reflect.ChanOf(reflect.BothDir, typ.Elem())), 0, cap)
 	for i := 0; i < cap; i++ {
 		chanSlice = reflect.Append(
 			chanSlice,
