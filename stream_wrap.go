@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"io"
 
-	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/ugorji/go/codec"
 )

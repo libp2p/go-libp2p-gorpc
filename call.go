@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // Call represents an active RPC. Calls are used to indicate completion
