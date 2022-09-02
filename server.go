@@ -10,24 +10,23 @@
 //
 // Only methods that satisfy these criteria will be made available for remote
 // access; other methods will be ignored:
-// 	- the method's type is exported.
-// 	- the method is exported.
-// 	- the method has 3 arguments.
-// 	- the method's first argument is a context.
-// 	- For normal methods:
-// 	  - the method's second and third arguments are both exported (or builtin) types.
-// 	  - the method's second argument is a pointer.
-// 	- For "streaming" methods:
-// 	  - the method's second argument is a receiving channel (<-chan) of exported (or builtin) type.
-// 	  - the method's third argument is a sending channel (chan<-) of exported (or builtin) type.
-// 	- the method has return type error.
-//
+//   - the method's type is exported.
+//   - the method is exported.
+//   - the method has 3 arguments.
+//   - the method's first argument is a context.
+//   - For normal methods:
+//   - the method's second and third arguments are both exported (or builtin) types.
+//   - the method's second argument is a pointer.
+//   - For "streaming" methods:
+//   - the method's second argument is a receiving channel (<-chan) of exported (or builtin) type.
+//   - the method's third argument is a sending channel (chan<-) of exported (or builtin) type.
+//   - the method has return type error.
 //
 // In effect, the method must look schematically like
 //
-// 	func (t *T) MethodName(ctx context.Context, argType T1, replyType *T2) error
-//      or
-// 	func (t *T) MethodName(ctx context.Context, argChan <-chan T1, replyChan chan<- T2) error
+//		func (t *T) MethodName(ctx context.Context, argType T1, replyType *T2) error
+//	     or
+//		func (t *T) MethodName(ctx context.Context, argChan <-chan T1, replyChan chan<- T2) error
 //
 // where T1 and T2 can be marshaled by github.com/ugorji/go/codec.
 //
@@ -728,11 +727,12 @@ func isExportedOrBuiltinType(t reflect.Type) bool {
 
 // Register publishes in the server the set of methods of the
 // receiver value that satisfy the following conditions:
-//	- exported method of exported type
-//      - context as first argument
-//	- input as second argument: exported type or channel of exported type
-//	- output as third argument: a pointer to a exported type, or a channel of exported type
-//	- one return value, of type error.
+//   - exported method of exported type
+//   - context as first argument
+//   - input as second argument: exported type or channel of exported type
+//   - output as third argument: a pointer to a exported type, or a channel of exported type
+//   - one return value, of type error.
+//
 // It returns an error if the receiver is not an exported type or has
 // no suitable methods. It also logs the error using package log.
 // The client accesses each method using a string of the form "Type.Method",
