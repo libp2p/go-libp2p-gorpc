@@ -1,6 +1,6 @@
 module github.com/libp2p/go-libp2p-gorpc
 
-go 1.19
+go 1.20
 
 require (
 	github.com/ipfs/go-log/v2 v2.5.1
