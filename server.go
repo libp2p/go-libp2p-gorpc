@@ -225,7 +225,7 @@ func (server *Server) ID() peer.ID {
 }
 
 func (server *Server) handle(s *streamWrap) {
-	logger.Debugf("%s: handling remote RPC from %s", server.host.ID().Pretty(), s.stream.Conn().RemotePeer())
+	logger.Debugf("%s: handling remote RPC from %s", server.host.ID().String(), s.stream.Conn().RemotePeer())
 	var svcID ServiceID
 	ctx := context.Background()
 

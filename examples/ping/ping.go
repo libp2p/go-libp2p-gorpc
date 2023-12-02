@@ -49,9 +49,9 @@ func startServer() {
 	log.Println("Launching host")
 	host := createPeer("/ip4/0.0.0.0/tcp/9000")
 
-	log.Printf("Hello World, my hosts ID is %s\n", host.ID().Pretty())
+	log.Printf("Hello World, my hosts ID is %s\n", host.ID().String())
 	for _, addr := range host.Addrs() {
-		ipfsAddr, err := multiaddr.NewMultiaddr("/ipfs/" + host.ID().Pretty())
+		ipfsAddr, err := multiaddr.NewMultiaddr("/ipfs/" + host.ID().String())
 		if err != nil {
 			panic(err)
 		}
@@ -77,7 +77,7 @@ func startServer() {
 func startClient(host string, pingCount, randomDataSize int) {
 	fmt.Println("Launching client")
 	client := createPeer("/ip4/0.0.0.0/tcp/9001")
-	fmt.Printf("Hello World, my hosts ID is %s\n", client.ID().Pretty())
+	fmt.Printf("Hello World, my hosts ID is %s\n", client.ID().String())
 	ma, err := multiaddr.NewMultiaddr(host)
 	if err != nil {
 		panic(err)
