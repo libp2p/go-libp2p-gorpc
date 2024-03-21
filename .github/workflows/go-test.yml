@@ -15,6 +15,5 @@ concurrency:
 
 jobs:
   go-test:
-    uses: pl-strflt/uci/.github/workflows/go-test.yml@v0.0
-    with:
-      go-versions: '["this"]'
+    uses: pl-strflt/uci/.github/workflows/go-test.yml@v1.0
+    secrets: inherit
