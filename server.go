@@ -782,7 +782,7 @@ func (server *Server) register(rcvr interface{}, name string, useName bool) erro
 		str := ""
 
 		// To help the user, see if a pointer receiver would work.
-		method := suitableMethods(s.name, reflect.PtrTo(s.typ), false)
+		method := suitableMethods(s.name, reflect.PointerTo(s.typ), false)
 		if len(method) != 0 {
 			str = "rpc.Register: type " + sname + " has no exported methods of suitable type (hint: pass a pointer to value of that type)"
 		} else {
